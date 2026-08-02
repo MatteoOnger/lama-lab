@@ -1,0 +1,14 @@
+name: lama-lab
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.12
+  - black
+  - matplotlib
+  - numpy
+  - pytest
+  - pytorch
+  - pip
