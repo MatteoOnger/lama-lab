@@ -1,4 +1,4 @@
-from typing import Callable, Sequence, Optional
+from typing import Callable
 
 import torch
 
@@ -17,8 +17,9 @@ class AgentPZOMD(BaseAgent):
     ----------
     n_episodes : int
         Number of parallel games to simulate at once.
-    init_x : torch.Tensor or sequence
-        Initial point used to initialize the candidate actions.
+    init_x : torch.Tensor or list of float
+        Initial point used to initialize the candidate actions. This can be a
+        tensor or a flat list/tuple of values.
     project_fn : Callable[[torch.Tensor], torch.Tensor], optional
         Projection function applied after perturbation and update steps.
     eta_0 : float, optional
@@ -45,8 +46,8 @@ class AgentPZOMD(BaseAgent):
     def __init__(
         self,
         n_episodes: int,
-        init_x: torch.Tensor | Sequence,
-        project_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+        init_x: torch.Tensor | list[float],
+        project_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
         eta_0: float = 0.05,
         delta_0: float = 0.01,
         min_delta: float = 0.005,

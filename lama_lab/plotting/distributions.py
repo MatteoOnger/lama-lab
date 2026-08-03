@@ -1,5 +1,3 @@
-from typing import Optional, Tuple
-
 import matplotlib.pyplot as plt
 import torch
 from matplotlib.axes import Axes
@@ -8,12 +6,12 @@ from matplotlib.figure import Figure
 
 def plot_distribution(
     samples: torch.Tensor,
-    fixed_points: Optional[torch.Tensor] = None,
-    bins: int = 1000,
+    fixed_points: torch.Tensor | None = None,
+    hist_range: tuple[float, float] = (0, 1),
     density: bool = True,
-    hist_range: Tuple[float, float] = (0, 1),
-    axes: Optional[list[Axes]] = None,
-    figsize: Tuple[float, float] = (8, 5),
+    bins: int = 1000,
+    figsize: tuple[float, float] = (8, 5),
+    axes: list[Axes] | None = None,
 ) -> Figure:
     """Plot the distribution of samples.
 
@@ -26,19 +24,19 @@ def plot_distribution(
     fixed_points : torch.Tensor, optional
         Array-like of shape ``(N, 3)`` containing ``(b, m, a)`` tuples for each
         interval.
-    bins : int, optional
-        Number of histogram bins.
-    density : bool, optional
-        Whether to normalize the histogram.
     hist_range : tuple of float, optional
         Histogram range.
+    density : bool, optional
+        Whether to normalize the histogram.
+    bins : int, optional
+        Number of histogram bins.
+    figsize : tuple of float, optional
+        Figure size used when ``axes`` is not provided.
     axes : list of matplotlib.axes.Axes, optional
         Axes to draw into. Pass ``[ax]`` for a single histogram plot, or
         ``[ax_hist, ax_fp]`` when fixed-point intervals are shown. When
         provided, the plot is drawn into the supplied axes instead of creating a
         new figure.
-    figsize : tuple of float, optional
-        Figure size used when ``axes`` is not provided.
 
     Returns
     -------
@@ -64,12 +62,16 @@ def plot_distribution(
     else:
         if fixed_points is None:
             if len(axes) != 1:
-                raise ValueError("axes must contain one Axes object for a single-panel plot")
+                raise ValueError(
+                    "axes must contain one Axes object for a single-panel plot"
+                )
             ax_hist = axes[0]
             ax_fp = None
         else:
             if len(axes) != 2:
-                raise ValueError("axes must contain two Axes objects for fixed-point plots")
+                raise ValueError(
+                    "axes must contain two Axes objects for fixed-point plots"
+                )
             ax_hist, ax_fp = axes
         fig = ax_hist.figure
 

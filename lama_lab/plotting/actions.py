@@ -1,5 +1,3 @@
-from typing import List, Optional, Sequence, Tuple
-
 import matplotlib.pyplot as plt
 import torch
 from matplotlib.axes import Axes
@@ -8,16 +6,16 @@ from matplotlib.figure import Figure
 
 def plot_market_makers_actions_history(
     mean_action_history: torch.Tensor,
-    min_action_history: Optional[torch.Tensor] = None,
-    max_action_history: Optional[torch.Tensor] = None,
-    std_action_history: Optional[torch.Tensor] = None,
-    fixed_points: Optional[torch.Tensor] = None,
-    maker_names: Optional[Sequence[str]] = None,
+    min_action_history: torch.Tensor | None = None,
+    max_action_history: torch.Tensor | None = None,
+    std_action_history: torch.Tensor | None = None,
+    fixed_points: torch.Tensor | None = None,
+    maker_names: list[str] | None = None,
     start_step: int = 0,
     nrows: int = 1,
-    ncols: Optional[int] = None,
-    figsize: Tuple[float, float] = (18, 6),
-    axes: Optional[List[Axes]] = None,
+    ncols: int | None = None,
+    figsize: tuple[float, float] = (18, 6),
+    axes: list[Axes] | None = None,
 ) -> Figure:
     """Plot action history (bid/ask prices) for multiple agents.
 
@@ -39,7 +37,7 @@ def plot_market_makers_actions_history(
         Array-like of shape ``(N, 3)`` containing ``(b, m, a)`` tuples for each
         interval. The lower and upper bounds ``b`` and ``a`` are used as the
         fixed horizontal levels to draw.
-    maker_names : sequence of str, optional
+    maker_names : list of str, optional
         Names of the market makers.
     start_step : int, optional
         First time step for the plotted history.

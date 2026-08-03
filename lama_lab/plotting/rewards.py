@@ -1,5 +1,3 @@
-from typing import Optional, Sequence, Tuple
-
 import matplotlib.pyplot as plt
 import torch
 from matplotlib.axes import Axes
@@ -8,15 +6,15 @@ from matplotlib.figure import Figure
 
 def plot_rewards_history(
     mean_reward_history: torch.Tensor,
-    min_reward_history: Optional[torch.Tensor] = None,
-    max_reward_history: Optional[torch.Tensor] = None,
-    std_reward_history: Optional[torch.Tensor] = None,
-    maker_names: Optional[Sequence[str]] = None,
+    min_reward_history: torch.Tensor | None = None,
+    max_reward_history: torch.Tensor | None = None,
+    std_reward_history: torch.Tensor | None = None,
+    maker_names: list[str] | None = None,
     start_step: int = 0,
     nrows: int = 1,
-    ncols: Optional[int] = None,
-    figsize: Tuple[float, float] = (18, 6),
-    axes: Optional[list[Axes]] = None,
+    ncols: int | None = None,
+    figsize: tuple[float, float] = (18, 6),
+    axes: list[Axes] | None = None,
 ) -> Figure:
     """Plot reward history for multiple agents.
 
@@ -31,7 +29,7 @@ def plot_rewards_history(
     std_reward_history : torch.Tensor, optional
         Tensor of shape ``(n_rounds, n_makers)`` containing reward standard
         deviations.
-    maker_names : sequence of str, optional
+    maker_names : list of str, optional
         Names of the market makers.
     start_step : int, optional
         First time step for the plotted history.

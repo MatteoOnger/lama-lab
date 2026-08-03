@@ -1,5 +1,3 @@
-from typing import Tuple
-
 import torch
 
 
@@ -17,7 +15,7 @@ class RingBuffer:
     """
 
     def __init__(
-        self, capacity: int, shape: Tuple[int] = (), device: torch.device = None
+        self, capacity: int, shape: tuple[int, ...] = (), device: torch.device | None = None
     ) -> None:
         self.capacity = capacity
         self.shape = tuple(shape)
@@ -42,7 +40,7 @@ class RingBuffer:
         self.size = min(self.size + 1, self.capacity)
         return
 
-    def get_all(self, device: torch.device = None) -> torch.Tensor:
+    def get_all(self, device: torch.device | None = None) -> torch.Tensor:
         """Return all stored elements in chronological order.
 
         Parameters
@@ -67,7 +65,7 @@ class RingBuffer:
             return ordered
         return ordered.to(device=device)
 
-    def get_last(self, n: int = 1, device: torch.device = None) -> torch.Tensor:
+    def get_last(self, n: int = 1, device: torch.device | None = None) -> torch.Tensor:
         """Return the most recent ``n`` stored elements.
 
         Parameters
