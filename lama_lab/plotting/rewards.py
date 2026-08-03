@@ -1,6 +1,8 @@
 from typing import Optional, Sequence, Tuple
-import torch
+
 import matplotlib.pyplot as plt
+import torch
+from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 
@@ -14,6 +16,7 @@ def plot_rewards_history(
     nrows: int = 1,
     ncols: Optional[int] = None,
     figsize: Tuple[float, float] = (18, 6),
+    axes: Optional[list[Axes]] = None,
 ) -> Figure:
     """Plot reward history for multiple agents.
 
@@ -33,43 +36,51 @@ def plot_rewards_history(
     start_step : int, optional
         First time step for the plotted history.
     nrows : int, optional
-        Number of subplot rows.
+        Number of subplot rows used when ``axes`` is not provided.
     ncols : int, optional
-        Number of subplot columns.
+        Number of subplot columns used when ``axes`` is not provided.
     figsize : tuple of float, optional
-        Figure size.
+        Figure size used when ``axes`` is not provided.
+    axes : list of matplotlib.axes.Axes, optional
+        Axes to draw into. Provide one axes per maker, e.g. ``[ax_0, ax_1]``.
+        When provided, the plots will be drawn on these axes instead of
+        creating a new figure.
 
     Returns
     -------
     fig : matplotlib.figure.Figure
         Figure containing the plotted reward history.
     """
-
     n_rounds, n_makers = mean_reward_history.shape
     time = range(start_step, start_step + n_rounds)
 
     if maker_names is None:
         maker_names = [f"Maker {i}" for i in range(n_makers)]
+    else:
+        if len(maker_names) != n_makers:
+            raise ValueError("length of maker_names must match number of makers")
 
-    if ncols is None:
-        ncols = -(-n_makers // nrows)
+    if axes is None:
+        if ncols is None:
+            ncols = -(-n_makers // nrows)
+        fig, created_axes = plt.subplots(
+            nrows,
+            ncols,
+            figsize=figsize,
+            squeeze=False,
+        )
+        axes = created_axes.flatten()
+    else:
+        fig = axes[0].figure
 
-    fig, axes = plt.subplots(
-        nrows,
-        ncols,
-        figsize=figsize,
-        squeeze=False,
-    )
-
-    axes = axes.flatten()
+    if len(axes) < n_makers:
+        raise ValueError("not enough axes provided for the number of makers")
 
     handles = []
     labels = []
 
     for i in range(n_makers):
-
         ax = axes[i]
-
         reward_mean = mean_reward_history[:, i]
 
         ax.plot(
@@ -121,17 +132,13 @@ def plot_rewards_history(
         if i == 0:
             handles, labels = ax.get_legend_handles_labels()
 
-    # Hide unused axes
-    for j in range(n_makers, len(axes)):
-        axes[j].axis("off")
-
-    plt.tight_layout(rect=[0, 0.08, 1, 1])
-
-    fig.legend(
-        handles,
-        labels,
-        loc="lower center",
-        bbox_to_anchor=(0.5, 0),
-        ncol=4,
-    )
+    fig.tight_layout(rect=[0, 0.08, 1, 1])
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            loc="lower center",
+            bbox_to_anchor=(0.5, 0),
+            ncol=4,
+        )
     return fig

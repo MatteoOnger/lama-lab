@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple
 
 import matplotlib.pyplot as plt
 import torch
@@ -9,10 +9,10 @@ from matplotlib.figure import Figure
 def plot_distribution(
     samples: torch.Tensor,
     fixed_points: Optional[torch.Tensor] = None,
-    ax: Optional[Union[Axes, Tuple[Axes, Axes]]] = None,
     bins: int = 1000,
-    hist_range: Tuple[float, float] = (0, 1),
     density: bool = True,
+    hist_range: Tuple[float, float] = (0, 1),
+    axes: Optional[list[Axes]] = None,
     figsize: Tuple[float, float] = (8, 5),
 ) -> Figure:
     """Plot the distribution of samples.
@@ -26,31 +26,55 @@ def plot_distribution(
     fixed_points : torch.Tensor, optional
         Array-like of shape ``(N, 3)`` containing ``(b, m, a)`` tuples for each
         interval.
-    ax : matplotlib.axes.Axes or tuple of matplotlib.axes.Axes, optional
-        Single axes when ``fixed_points`` is ``None``. Otherwise, pass a tuple
-        ``(ax_hist, ax_fp)``.
-    bins : int
+    bins : int, optional
         Number of histogram bins.
-    hist_range : tuple of float
-        Histogram range.
-    density : bool
+    density : bool, optional
         Whether to normalize the histogram.
-    figsize : tuple of float
-        Figure size, used only when ``ax`` is ``None``.
+    hist_range : tuple of float, optional
+        Histogram range.
+    axes : list of matplotlib.axes.Axes, optional
+        Axes to draw into. Pass ``[ax]`` for a single histogram plot, or
+        ``[ax_hist, ax_fp]`` when fixed-point intervals are shown. When
+        provided, the plot is drawn into the supplied axes instead of creating a
+        new figure.
+    figsize : tuple of float, optional
+        Figure size used when ``axes`` is not provided.
 
     Returns
     -------
     fig : matplotlib.figure.Figure
         Figure containing the plot.
     """
-    if fixed_points is None:
-        if ax is None:
+    if axes is None:
+        if fixed_points is None:
             fig, ax = plt.subplots(figsize=figsize)
+            ax_hist = ax
+            ax_fp = None
         else:
-            fig = ax.figure
+            fig, (ax_hist, ax_fp) = plt.subplots(
+                2,
+                1,
+                figsize=figsize,
+                sharex=True,
+                gridspec_kw={
+                    "height_ratios": [4, 1],
+                    "hspace": 0.05,
+                },
+            )
+    else:
+        if fixed_points is None:
+            if len(axes) != 1:
+                raise ValueError("axes must contain one Axes object for a single-panel plot")
+            ax_hist = axes[0]
+            ax_fp = None
+        else:
+            if len(axes) != 2:
+                raise ValueError("axes must contain two Axes objects for fixed-point plots")
+            ax_hist, ax_fp = axes
+        fig = ax_hist.figure
 
-        # Histogram
-        ax.hist(
+    if fixed_points is None:
+        ax_hist.hist(
             samples,
             bins=bins,
             density=density,
@@ -58,27 +82,11 @@ def plot_distribution(
             color="tab:blue",
             alpha=0.75,
         )
-        ax.set_title("Distribution of V")
-        ax.set_xlabel("v")
-        ax.set_ylabel("Density")
+        ax_hist.set_title("Distribution of V")
+        ax_hist.set_xlabel("v")
+        ax_hist.set_ylabel("Density")
         return fig
 
-    if ax is None:
-        fig, (ax_hist, ax_fp) = plt.subplots(
-            2,
-            1,
-            figsize=figsize,
-            sharex=True,
-            gridspec_kw={
-                "height_ratios": [4, 1],
-                "hspace": 0.05,
-            },
-        )
-    else:
-        ax_hist, ax_fp = ax
-        fig = ax_hist.figure
-
-    # Histogram
     ax_hist.hist(
         samples,
         bins=bins,
@@ -90,12 +98,10 @@ def plot_distribution(
     ax_hist.set_title("Distribution of V")
     ax_hist.set_ylabel("Density")
 
-    # Fixed-point intervals
     n = len(fixed_points)
     for i, (b, m, a) in enumerate(fixed_points):
         y = n - i
 
-        # Interval [b, a]
         ax_fp.hlines(
             y,
             b,
@@ -103,8 +109,6 @@ def plot_distribution(
             color="black",
             linewidth=2,
         )
-
-        # Endpoints
         ax_fp.plot(
             [b, a],
             [y, y],
@@ -113,8 +117,6 @@ def plot_distribution(
             markersize=10,
             markeredgewidth=2,
         )
-
-        # Midpoint
         ax_fp.scatter(
             m,
             y,
@@ -129,7 +131,6 @@ def plot_distribution(
     ax_fp.set_xlabel("v")
     ax_fp.set_ylabel("FP")
 
-    # Clean up
     ax_fp.spines["left"].set_visible(False)
     ax_fp.spines["right"].set_visible(False)
     ax_fp.spines["top"].set_visible(False)
