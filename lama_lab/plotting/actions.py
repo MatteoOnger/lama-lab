@@ -4,7 +4,92 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 
-def plot_market_makers_actions_history(
+def plot_market_makers_actions_histo2d(
+    last_actions: torch.Tensor,
+    maker_names: list[str] | None = None,
+    hist_range: tuple[float, float] = (0.0, 1.0),
+    density: bool = True,
+    bins: int = 100,
+    figsize: tuple[float, float] = (18, 8),
+    axes: list[Axes] | None = None,
+) -> Figure:
+    """Plot a 2D histogram of bid/ask actions for multiple market makers.
+
+    Parameters
+    ----------
+    last_actions : torch.Tensor
+        Tensor of shape ``(N, n_makers, 2)`` containing bid/ask actions.
+    maker_names : list of str, optional
+        Names of the market makers.
+    hist_range : tuple of float, optional
+        Range of the histogram axes for both bid and ask prices.
+    density : bool, optional
+        Whether to plot the histogram as a probability density.
+    bins : int, optional
+        Number of bins used for the histogram.
+    figsize : tuple of float, optional
+        Figure size used when ``axes`` is not provided.
+    axes : list of matplotlib.axes.Axes, optional
+        Axes to draw into. Provide one axes per maker, e.g. ``[ax_0, ax_1]``.
+        When provided, the plots will be drawn on these axes instead of
+        creating a new figure.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        Figure containing the plotted 2D histograms.
+    """
+    _, n_makers, _ = last_actions.shape
+
+    if maker_names is None:
+        maker_names = [f"Maker {i}" for i in range(n_makers)]
+    elif len(maker_names) != n_makers:
+        raise ValueError("length of maker_names must match number of makers")
+
+    if axes is None:
+        fig, created_axes = plt.subplots(
+            1,
+            n_makers,
+            figsize=figsize,
+            squeeze=False,
+        )
+        axes = created_axes.flatten()
+    else:
+        if len(axes) < n_makers:
+            raise ValueError("not enough axes provided")
+        fig = axes[0].figure
+
+    for i in range(n_makers):
+        ax = axes[i]
+        points = last_actions[:, i, :]
+
+        bid_prices = points[:, 0]
+        ask_prices = points[:, 1]
+
+        hist = ax.hist2d(
+            bid_prices,
+            ask_prices,
+            bins=bins,
+            cmap="viridis",
+            range=[
+                [hist_range[0], hist_range[1]],
+                [hist_range[0], hist_range[1]],
+            ],
+            density=density,
+        )
+
+        fig.colorbar(hist[3], ax=ax, label="Density")
+
+        ax.set_xlabel("Bid Price")
+        ax.set_ylabel("Ask Price")
+        ax.set_title(f"Last bid/ask actions for {maker_names[i]}")
+        ax.grid(True, linestyle="--", alpha=0.7)
+
+    plt.tight_layout()
+    return fig
+
+
+def plot_market_makers_actions_scatter(
     mean_action_history: torch.Tensor,
     min_action_history: torch.Tensor | None = None,
     max_action_history: torch.Tensor | None = None,
