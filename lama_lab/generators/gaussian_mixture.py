@@ -18,15 +18,6 @@ class GaussianMixtureGenerator(BaseGenerator):
         Lower bound used to clamp generated values.
     clamp_max : float
         Upper bound used to clamp generated values.
-    device : torch.device, optional
-        Device on which to store the parameters and perform computations.
-        If not provided, defaults to the current default device.
-
-    Notes
-    -----
-    The mixture parameters are moved to the specified device during
-    initialization. All subsequent sampling operations are performed on the
-    same device.
     """
 
     def __init__(
@@ -36,12 +27,10 @@ class GaussianMixtureGenerator(BaseGenerator):
         stds: torch.Tensor,
         clamp_min: float,
         clamp_max: float,
-        device: torch.device = None,
     ):
-        self.device = device if device is not None else torch.get_default_device()
-        self.weights = weights.to(device=self.device)
-        self.means = means.to(device=self.device)
-        self.stds = stds.to(device=self.device)
+        self.weights = weights
+        self.means = means
+        self.stds = stds
         self.clamp_min = clamp_min
         self.clamp_max = clamp_max
         return

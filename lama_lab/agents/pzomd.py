@@ -8,13 +8,10 @@ from .base import BaseAgent
 class AgentPZOMD(BaseAgent):
     """Perturbation-based zeroth-order optimization agent.
 
-    The agent uses a perturbation-based zeroth-order update rule: it samples a
-    random direction, evaluates perturbed candidate actions, and updates its
-    current estimate from the resulting reward signal. This implementation is
-    designed to manage ``n_episodes`` independent games in parallel while
-    sharing the same hyperparameters and the same initial action across all of
-    them. In other words, :meth:`act` produces one perturbed action per game
-    and :meth:`update` expects one reward per game.
+    The agent estimates the gradient by sampling a random perturbation direction,
+    evaluating the perturbed action, and updating the current iterate using the
+    observed reward. Learning rates and perturbation radii follow predefined
+    decay schedules.
 
     Parameters
     ----------
@@ -34,10 +31,15 @@ class AgentPZOMD(BaseAgent):
         Minimum allowed learning rate.
     max_grad_norm : float, optional
         Maximum norm used to clip the estimated gradient.
-    device : torch.device, optional
-        Device on which tensors are stored.
     name : str, optional
         Human-readable name of the agent.
+
+    Notes
+    -----
+    This implementation supports batched execution by maintaining one optimizer
+    state per episode. All episodes share the same hyperparameters and evolve
+    independently, allowing :meth:`act` and :meth:`update` to operate on
+    tensors of shape ``(n_episodes, ...)`` using vectorized PyTorch operations.
     """
 
     def __init__(
@@ -50,7 +52,6 @@ class AgentPZOMD(BaseAgent):
         min_delta: float = 0.005,
         min_eta: float = 0.001,
         max_grad_norm: float = 5.0,
-        device: torch.device = None,
         name: str = "AgentPZOMD",
     ):
         super().__init__(name=name)
@@ -61,23 +62,22 @@ class AgentPZOMD(BaseAgent):
         self.min_delta = min_delta
         self.min_eta = min_eta
         self.max_grad_norm = max_grad_norm
-        self.device = device if device is not None else torch.get_default_device()
 
-        init_x_tensor = torch.as_tensor(init_x, device=self.device)
+        init_x_tensor = torch.as_tensor(init_x)
         self.x = self.project_fn(init_x_tensor.repeat(self.n_parallel_games, 1))
         self.action_dim = self.x.shape[1]
 
         self.t = 1
         self.eta = eta_0
         self.delta = delta_0
-        self.u = torch.zeros_like(self.x, device=self.device)
+        self.u = torch.zeros_like(self.x)
         return
 
     def act(self) -> torch.Tensor:
         self.delta = max(self.delta_0 * (self.t**-0.5), self.min_delta)
         self.eta = max(self.eta_0 * (self.t**-0.75), self.min_eta)
 
-        z = torch.randn(self.n_parallel_games, self.action_dim, device=self.device)
+        z = torch.randn(self.n_parallel_games, self.action_dim)
         norm_z = torch.linalg.norm(z, dim=1, keepdim=True)
 
         norm_z = torch.clamp(norm_z, min=1e-8)

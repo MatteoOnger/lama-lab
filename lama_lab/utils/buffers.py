@@ -23,7 +23,7 @@ class RingBuffer:
         self.shape = tuple(shape)
         self.device = device if device is not None else torch.get_default_device()
 
-        self.buffer = torch.zeros((capacity, *self.shape), device=device)
+        self.buffer = torch.zeros((capacity, *self.shape), device=self.device)
         self.size = 0
         self.idx = 0
         return
@@ -36,13 +36,20 @@ class RingBuffer:
         x : torch.Tensor
             Tensor to store in the buffer.
         """
+        x = x.to(device=self.device)
         self.buffer[self.idx] = x
         self.idx = (self.idx + 1) % self.capacity
         self.size = min(self.size + 1, self.capacity)
         return
 
-    def get_all(self) -> torch.Tensor:
+    def get_all(self, device: torch.device = None) -> torch.Tensor:
         """Return all stored elements in chronological order.
+
+        Parameters
+        ----------
+        device : torch.device, optional
+            Device on which to return the buffered data. If ``None``, the data
+            is returned on the device where the buffer is stored.
 
         Returns
         -------
@@ -50,16 +57,26 @@ class RingBuffer:
             Tensor containing the buffered elements.
         """
         if self.size < self.capacity:
-            return self.buffer[: self.size]
-        return torch.cat((self.buffer[self.idx :], self.buffer[: self.idx]), dim=0)
+            ordered = self.buffer[: self.size]
+        else:
+            ordered = torch.cat(
+                (self.buffer[self.idx :], self.buffer[: self.idx]), dim=0
+            )
 
-    def get_last(self, n: int = 1) -> torch.Tensor:
+        if device is None:
+            return ordered
+        return ordered.to(device=device)
+
+    def get_last(self, n: int = 1, device: torch.device = None) -> torch.Tensor:
         """Return the most recent ``n`` stored elements.
 
         Parameters
         ----------
         n : int, optional
             Number of recent elements to retrieve, by default 1.
+        device : torch.device, optional
+            Device on which to return the buffered data. If ``None``, the data
+            is returned on the device where the buffer is stored.
 
         Returns
         -------
@@ -72,10 +89,14 @@ class RingBuffer:
             raise ValueError("n must be > 0")
 
         if n == 1:
-            return self.buffer[(self.idx - 1) % self.capacity]
+            ordered = self.buffer[(self.idx - 1) % self.capacity]
+        else:
+            ordered = self.get_all()
+            ordered = ordered if n >= self.size else ordered[-n:]
 
-        ordered = self.get_all()
-        return ordered if n >= self.size else ordered[-n:]
+        if device is None:
+            return ordered
+        return ordered.to(device=device)
 
     def __len__(self) -> int:
         """Return the number of currently stored elements."""

@@ -4,11 +4,14 @@ from ..generators import BaseGenerator
 
 
 class MarketMakingEnvironment:
-    """Market-making environment for simulating maker-trader interactions.
+    """Market-making environment with batched independent episodes.
 
-    The environment batches multiple episodes and assigns rewards to makers based
-    on how closely their submitted prices match the trader's chosen side and the
-    latent true value sampled by the provided generator.
+    At each round, every market maker submits a bid and an ask quote. A latent
+    true value is sampled for each episode, and a trader executes against the
+    quote (bid or ask) that provides the highest utility. If multiple makers
+    offer the same best price, the trade is split equally among them. Each
+    selected maker receives a reward equal to its profit from the trade divided
+    by the number of selected makers.
 
     Parameters
     ----------
@@ -23,8 +26,13 @@ class MarketMakingEnvironment:
     epsilon : float, optional
         Numerical tolerance used when comparing prices and selecting the best
         offer.
-    device : torch.device, optional
-        Device on which tensors should be allocated.
+
+    Notes
+    -----
+    The environment supports batched execution: multiple independent episodes
+    are simulated simultaneously by operating on tensors of shape
+    ``(n_episodes, ...)``. Episodes do not interact with one another, enabling
+    efficient parallel simulation with vectorized PyTorch operations.
     """
 
     def __init__(
@@ -34,14 +42,12 @@ class MarketMakingEnvironment:
         n_rounds: int,
         generator_v: BaseGenerator,
         epsilon: float = 1e-8,
-        device: torch.device = None,
     ):
         self.n_makers = n_makers
         self.n_episodes = n_episodes
         self.n_rounds = n_rounds
         self.generator_v = generator_v
         self.epsilon = epsilon
-        self.device = device if device is not None else torch.get_default_device()
 
         self.round = 0
         return
@@ -85,9 +91,7 @@ class MarketMakingEnvironment:
         ask_gap = best_ask - true_values
 
         # Trader's choice
-        trader_prefers_ask = torch.randint(
-            0, 2, (self.n_episodes,), dtype=torch.bool, device=self.device
-        )
+        trader_prefers_ask = torch.randint(0, 2, (self.n_episodes,), dtype=torch.bool)
         trader_prefers_ask[bid_gap > ask_gap + self.epsilon] = True
         trader_prefers_ask[ask_gap > bid_gap + self.epsilon] = False
 
@@ -117,7 +121,7 @@ class MarketMakingEnvironment:
         )
 
         # Assign rewards to the selected makers
-        rewards = torch.zeros((self.n_episodes, self.n_makers), device=self.device)
+        rewards = torch.zeros((self.n_episodes, self.n_makers))
         rewards[selected_maker_indices] = reward_per_episode[selected_maker_indices[0]]
 
         self.round += 1
