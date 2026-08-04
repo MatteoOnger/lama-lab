@@ -5,8 +5,8 @@ def get_all_unique_fixed_points(
     initial_x_values: list[float],
     samples: torch.Tensor,
     max_iter: int = 1000,
-    tol: float = 1e-6,
     epsilon: float = 1e-4,
+    tol: float = 1e-6,
 ) -> torch.Tensor:
     """Find unique fixed points of the lower/upper mean iteration.
 
@@ -27,10 +27,10 @@ def get_all_unique_fixed_points(
         lower and upper means.
     max_iter : int, optional
         Maximum number of iterations for each initial value.
-    tol : float, optional
-        Convergence tolerance for the fixed-point update.
     epsilon : float, optional
         Tolerance used to identify distinct fixed points.
+    tol : float, optional
+        Convergence tolerance for the fixed-point update.
 
     Returns
     -------

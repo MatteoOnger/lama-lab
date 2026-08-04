@@ -10,6 +10,7 @@ def plot_market_makers_actions_histo2d(
     hist_range: tuple[float, float] = (0.0, 1.0),
     density: bool = True,
     bins: int = 100,
+    title: str = "Bid/Ask Actions",
     figsize: tuple[float, float] = (18, 8),
     axes: list[Axes] | None = None,
 ) -> Figure:
@@ -27,6 +28,8 @@ def plot_market_makers_actions_histo2d(
         Whether to plot the histogram as a probability density.
     bins : int, optional
         Number of bins used for the histogram.
+    title : str, optional
+        Title of the plot.
     figsize : tuple of float, optional
         Figure size used when ``axes`` is not provided.
     axes : list of matplotlib.axes.Axes, optional
@@ -42,7 +45,7 @@ def plot_market_makers_actions_histo2d(
     _, n_makers, _ = actions.shape
 
     if maker_names is None:
-        maker_names = [f"Maker {i}" for i in range(n_makers)]
+        maker_names = [f"Maker_{i}" for i in range(n_makers)]
     elif len(maker_names) != n_makers:
         raise ValueError("length of maker_names must match number of makers")
 
@@ -82,7 +85,7 @@ def plot_market_makers_actions_histo2d(
 
         ax.set_xlabel("Bid Price")
         ax.set_ylabel("Ask Price")
-        ax.set_title(f"Bid/ask actions for {maker_names[i]}")
+        ax.set_title(f"{title} - {maker_names[i]}")
         ax.grid(True, linestyle="--", alpha=0.7)
 
     plt.tight_layout()
@@ -94,7 +97,7 @@ def plot_market_makers_actions_dispersion_histo2d(
     hist_range: tuple[float, float] = (-1.0, 1.0),
     density: bool = True,
     bins: int = 100,
-    title: str = "Market makers actions dispersion",
+    title: str = "Market Makers Actions Dispersion",
     figsize: tuple[float, float] = (8, 8),
     ax: Axes | None = None,
 ) -> Figure:
@@ -244,7 +247,7 @@ def plot_market_makers_actions_scatter(
     time = range(start_step, start_step + n_rounds)
 
     if maker_names is None:
-        maker_names = [f"Maker {i}" for i in range(n_makers)]
+        maker_names = [f"Maker_{i}" for i in range(n_makers)]
     else:
         if len(maker_names) != n_makers:
             raise ValueError("length of maker_names must match number of makers")
@@ -373,7 +376,7 @@ def plot_market_makers_actions_scatter(
                 label="Fixed Ask",
             )
 
-        ax.set_title(f"{maker_names[i]} Actions")
+        ax.set_title(f"Actions - {maker_names[i]}")
         ax.set_xlabel("Time Step")
         ax.set_ylabel("Price")
 

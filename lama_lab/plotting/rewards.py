@@ -4,7 +4,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 
-def plot_rewards_history(
+def plot_rewards_scatter(
     mean_reward_history: torch.Tensor,
     min_reward_history: torch.Tensor | None = None,
     max_reward_history: torch.Tensor | None = None,
@@ -53,7 +53,7 @@ def plot_rewards_history(
     time = range(start_step, start_step + n_rounds)
 
     if maker_names is None:
-        maker_names = [f"Maker {i}" for i in range(n_makers)]
+        maker_names = [f"Maker_{i}" for i in range(n_makers)]
     else:
         if len(maker_names) != n_makers:
             raise ValueError("length of maker_names must match number of makers")
@@ -122,7 +122,7 @@ def plot_rewards_history(
                 label="Max Reward",
             )
 
-        ax.set_title(f"{maker_names[i]} Rewards")
+        ax.set_title(f"Rewards - {maker_names[i]}")
         ax.set_xlabel("Time Step")
         ax.set_ylabel("Reward")
         ax.grid(True, linestyle="--", alpha=0.7)
