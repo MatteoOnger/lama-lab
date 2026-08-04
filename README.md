@@ -9,7 +9,9 @@
 ```text
 lama_lab/
 ├── agents/          - Implementations of learning agents.
+├── analysis/        - Analysis tools for evaluating learned agent strategies and other statistics.
 ├── generators/      - Tools for creating synthetic samples.
+├── plotting/        - Visualization helpers for distributions, actions and rewards.
 ├── projectors/      - Components for enforcing valid value ranges.
 ├── envs/            - Environment implementations for simulation tasks.
 └── utils/           - Shared helper functions and utilities.
