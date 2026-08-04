@@ -5,7 +5,7 @@ from matplotlib.figure import Figure
 
 
 def plot_market_makers_actions_histo2d(
-    last_actions: torch.Tensor,
+    actions: torch.Tensor,
     maker_names: list[str] | None = None,
     hist_range: tuple[float, float] = (0.0, 1.0),
     density: bool = True,
@@ -17,7 +17,7 @@ def plot_market_makers_actions_histo2d(
 
     Parameters
     ----------
-    last_actions : torch.Tensor
+    actions : torch.Tensor
         Tensor of shape ``(N, n_makers, 2)`` containing bid/ask actions.
     maker_names : list of str, optional
         Names of the market makers.
@@ -39,7 +39,7 @@ def plot_market_makers_actions_histo2d(
     fig : matplotlib.figure.Figure
         Figure containing the plotted 2D histograms.
     """
-    _, n_makers, _ = last_actions.shape
+    _, n_makers, _ = actions.shape
 
     if maker_names is None:
         maker_names = [f"Maker {i}" for i in range(n_makers)]
@@ -61,7 +61,7 @@ def plot_market_makers_actions_histo2d(
 
     for i in range(n_makers):
         ax = axes[i]
-        points = last_actions[:, i, :]
+        points = actions[:, i, :]
 
         bid_prices = points[:, 0]
         ask_prices = points[:, 1]
@@ -82,10 +82,108 @@ def plot_market_makers_actions_histo2d(
 
         ax.set_xlabel("Bid Price")
         ax.set_ylabel("Ask Price")
-        ax.set_title(f"Last bid/ask actions for {maker_names[i]}")
+        ax.set_title(f"Bid/ask actions for {maker_names[i]}")
         ax.grid(True, linestyle="--", alpha=0.7)
 
     plt.tight_layout()
+    return fig
+
+
+def plot_market_makers_actions_dispersion_histo2d(
+    actions_dispersion: torch.Tensor,
+    hist_range: tuple[float, float] = (-1.0, 1.0),
+    density: bool = True,
+    bins: int = 100,
+    title: str = "Market makers actions dispersion",
+    figsize: tuple[float, float] = (8, 8),
+    ax: Axes | None = None,
+) -> Figure:
+    """Plot a 2D histogram of market makers actions dispersion.
+
+    The input is expected to contain one dispersion value for each action
+    dimension and sample. Typically, it is the output of
+    ``compute_action_dispersion(..., reduce_features=False)``, although any
+    tensor with the same shape can be provided.
+
+    Each point represents the dispersion of the market makers' actions along
+    the two action dimensions:
+    - x-axis: bid action dispersion
+    - y-axis: ask action dispersion
+
+    Points concentrated around the origin indicate highly synchronized
+    actions, while a wider spread indicates greater disagreement among
+    market makers.
+
+    Parameters
+    ----------
+    actions_dispersion : torch.Tensor
+        Tensor of shape ``(N, 2)`` containing the bid and ask action
+        dispersion for each sample.
+    hist_range : tuple of float, optional
+        Range of the histogram axes for both action dimensions.
+    density : bool, optional
+        Whether to plot the histogram as a probability density.
+    bins : int, optional
+        Number of bins used for the histogram.
+    title : str, optional
+        Title of the plot.
+    figsize : tuple of float, optional
+        Figure size used when ``ax`` is not provided.
+    ax : matplotlib.axes.Axes, optional
+        Axis to draw into. When provided, the plot is drawn on this axis
+        instead of creating a new figure.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        Figure containing the plotted 2D histogram.
+    """
+    if actions_dispersion.ndim != 2 or actions_dispersion.shape[-1] != 2:
+        raise ValueError("actions_dispersion must have shape (N, 2)")
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.figure
+
+    points = actions_dispersion.detach().cpu()
+
+    bid_dispersion = points[:, 0]
+    ask_dispersion = points[:, 1]
+
+    hist = ax.hist2d(
+        bid_dispersion,
+        ask_dispersion,
+        bins=bins,
+        cmap="viridis",
+        range=[
+            [hist_range[0], hist_range[1]],
+            [hist_range[0], hist_range[1]],
+        ],
+        density=density,
+    )
+
+    fig.colorbar(hist[3], ax=ax, label="Density")
+
+    ax.axhline(
+        0,
+        color="white",
+        linestyle="--",
+        alpha=0.5,
+    )
+    ax.axvline(
+        0,
+        color="white",
+        linestyle="--",
+        alpha=0.5,
+    )
+
+    ax.set_xlabel("Bid action dispersion")
+    ax.set_ylabel("Ask action dispersion")
+    ax.set_title(title)
+    ax.grid(True, linestyle="--", alpha=0.7)
+
+    fig.tight_layout()
     return fig
 
 
