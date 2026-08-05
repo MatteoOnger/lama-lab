@@ -2,11 +2,11 @@ import torch
 
 
 def compute_action_dispersion(
-    x: torch.Tensor,
+    actions: torch.Tensor,
+    action_axis: int = -1,
     agent_axis: int = -2,
-    feature_axis: int = -1,
-    reduce_features: bool = True,
-    p: float = 2,
+    reduce_action_dim: bool = True,
+    p: float = 2.0,
 ) -> torch.Tensor:
     """Compute the dispersion of agent actions around their centroid.
 
@@ -17,17 +17,17 @@ def compute_action_dispersion(
 
     Parameters
     ----------
-    x : torch.Tensor
-        Tensor containing agent actions.
+    actions : torch.Tensor
+        Tensor containing agent actions. Must have at least 2 dimensions.
+    action_axis : int, optional
+        Axis corresponding to the action dimensions (components).
     agent_axis : int, optional
         Axis corresponding to agents.
-    feature_axis : int, optional
-        Axis corresponding to action features.
-    reduce_features : bool, optional
-        If ``True``, average the dispersion over all action features and
+    reduce_action_dim : bool, optional
+        If ``True``, average the dispersion over all action dimensions and
         return a single value for each remaining index combination.
-        If ``False``, preserve the action feature dimension and return one
-        dispersion value per action feature.
+        If ``False``, preserve the action dimension axis and return one
+        dispersion value per action component.
     p : float, optional
         Exponent applied to the absolute deviations from the centroid.
 
@@ -35,15 +35,14 @@ def compute_action_dispersion(
     -------
     out : torch.Tensor
         Action dispersion around the centroid.
-        If ``reduce_features=True``, the output has the same shape as the
-        input tensor with the agent and feature dimensions removed.
-        If ``reduce_features=False``, the output preserves the action feature
-        dimension.
+        If ``reduce_action_dim=True``, the output has the same shape as the
+        input tensor with the agent and action dimension axes removed.
+        If ``reduce_action_dim=False``, the output preserves the action
+        dimension in its original relative position.
     """
-    x = torch.movedim(x, (agent_axis, feature_axis), (-2, -1))
-    centroid = x.mean(dim=-2, keepdim=True)
+    centroid = actions.mean(dim=agent_axis, keepdim=True)
+    deviation = torch.abs(actions - centroid).pow(p)
 
-    deviation = torch.abs(x - centroid).pow(p)
-    dim = (-2, -1) if reduce_features else (-2,)
-
-    return deviation.mean(dim=dim)
+    if reduce_action_dim:
+        return deviation.mean(dim=(agent_axis, action_axis))
+    return deviation.mean(dim=agent_axis)

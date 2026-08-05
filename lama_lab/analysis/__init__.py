@@ -1,4 +1,4 @@
-"""Analysis utilities for agent behaviors and distribution computations."""
+"""Analysis utilities."""
 
 from . import actions
 from . import distributions
