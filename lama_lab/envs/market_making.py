@@ -13,7 +13,7 @@ class MarketMakingEnvironment:
     selected maker receives a reward equal to its profit from the trade divided
     by the number of selected makers.
 
-    Parameters
+    Attributes
     ----------
     n_makers : int
         Number of makers participating in each episode.
@@ -23,16 +23,18 @@ class MarketMakingEnvironment:
         Total number of rounds to simulate.
     generator_v : BaseGenerator
         Generator used to sample the latent true values.
-    epsilon : float, optional
+    epsilon : float
         Numerical tolerance used when comparing prices and selecting the best
         offer.
+    round : int
+        Current round index of the simulation.
 
     Notes
     -----
     The environment supports batched execution: multiple independent episodes
-    are simulated simultaneously by operating on tensors of shape
-    ``(n_episodes, ...)``. Episodes do not interact with one another, enabling
-    efficient parallel simulation with vectorized PyTorch operations.
+    are simulated simultaneously by operating on tensors of shape ``(n_episodes, ...)``.
+    Episodes do not interact with one another, enabling efficient parallel simulation
+    with vectorized PyTorch operations.
     """
 
     def __init__(
@@ -43,6 +45,21 @@ class MarketMakingEnvironment:
         generator_v: BaseGenerator,
         epsilon: float = 1e-8,
     ):
+        """
+        Parameters
+        ----------
+        n_makers : int
+            Number of makers participating in each episode.
+        n_episodes : int
+            Number of independent episodes to process in a batch.
+        n_rounds : int
+            Total number of rounds to simulate.
+        generator_v : BaseGenerator
+            Generator used to sample the latent true values.
+        epsilon : float, optional
+            Numerical tolerance used when comparing prices and selecting the best
+            offer.
+        """
         self.n_makers = n_makers
         self.n_episodes = n_episodes
         self.n_rounds = n_rounds
@@ -75,12 +92,21 @@ class MarketMakingEnvironment:
         Raises
         ------
         ValueError
-            If the input actions do not match the expected shape.
+            If the input actions do not match the expected shape, or if
+            the simulation has exceeded the maximum number of rounds.
         """
-        if actions.shape != (self.n_episodes, self.n_makers, 2):
-            raise ValueError("actions must have shape (n_episodes, n_makers, 2)")
+        if self.round >= self.n_rounds:
+            raise ValueError(
+                f"Simulation finished. Maximum number of rounds ({self.n_rounds}) reached. "
+                "Call reset() to start a new simulation."
+            )
 
-        true_values = self.generator_v.generate(self.n_episodes)
+        if actions.shape != (self.n_episodes, self.n_makers, 2):
+            raise ValueError("actions must have shape (n_episodes, n_makers, 2).")
+
+        true_values = self.generator_v.generate(self.n_episodes).to(
+            device=actions.device
+        )
 
         # Best bid and ask per episode
         best_bid = actions[:, :, 0].amax(dim=1)
@@ -91,7 +117,9 @@ class MarketMakingEnvironment:
         ask_gap = best_ask - true_values
 
         # Trader's choice
-        trader_prefers_ask = torch.randint(0, 2, (self.n_episodes,), dtype=torch.bool)
+        trader_prefers_ask = torch.randint(
+            0, 2, (self.n_episodes,), dtype=torch.bool, device=actions.device
+        )
         trader_prefers_ask[bid_gap > ask_gap + self.epsilon] = True
         trader_prefers_ask[ask_gap > bid_gap + self.epsilon] = False
 
@@ -121,7 +149,10 @@ class MarketMakingEnvironment:
         )
 
         # Assign rewards to the selected makers
-        rewards = torch.zeros((self.n_episodes, self.n_makers))
+        rewards = torch.zeros(
+            (self.n_episodes, self.n_makers),
+            device=actions.device,
+        )
         rewards[selected_maker_indices] = reward_per_episode[selected_maker_indices[0]]
 
         self.round += 1
