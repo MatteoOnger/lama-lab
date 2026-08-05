@@ -1,6 +1,7 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:conda",
     "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "autoDocstring.docstringFormat": "numpy",
 
     "[python]": {
         "editor.defaultFormatter": "ms-python.black-formatter",
