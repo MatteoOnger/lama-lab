@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Experiment result directories
+results/
+notebooks/results/
+scripts/results/
