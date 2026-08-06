@@ -13,7 +13,7 @@ class MarketMakingEnvironment:
     selected maker receives a reward equal to its profit from the trade divided
     by the number of selected makers.
 
-    Attributes
+    Parameters
     ----------
     n_makers : int
         Number of makers participating in each episode.
@@ -23,9 +23,12 @@ class MarketMakingEnvironment:
         Total number of rounds to simulate.
     generator_v : BaseGenerator
         Generator used to sample the latent true values.
-    epsilon : float
+    epsilon : float, optional
         Numerical tolerance used when comparing prices and selecting the best
         offer.
+
+    Attributes
+    ----------
     round : int
         Current round index of the simulation.
 
@@ -45,21 +48,6 @@ class MarketMakingEnvironment:
         generator_v: BaseGenerator,
         epsilon: float = 1e-8,
     ):
-        """
-        Parameters
-        ----------
-        n_makers : int
-            Number of makers participating in each episode.
-        n_episodes : int
-            Number of independent episodes to process in a batch.
-        n_rounds : int
-            Total number of rounds to simulate.
-        generator_v : BaseGenerator
-            Generator used to sample the latent true values.
-        epsilon : float, optional
-            Numerical tolerance used when comparing prices and selecting the best
-            offer.
-        """
         self.n_makers = n_makers
         self.n_episodes = n_episodes
         self.n_rounds = n_rounds

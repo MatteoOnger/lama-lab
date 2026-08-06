@@ -13,7 +13,6 @@ class BaseGenerator(ABC):
     def generate(self, n_samples: int) -> torch.Tensor:
         """Generate ``n_samples`` samples.
 
-
         Parameters
         ----------
         n_samples : int
@@ -21,7 +20,7 @@ class BaseGenerator(ABC):
 
         Returns
         -------
-        tensor : torch.Tensor
+        samples : torch.Tensor
             A tensor of shape ``(n_samples,)`` containing the generated values.
         """
         raise NotImplementedError

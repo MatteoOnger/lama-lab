@@ -13,6 +13,27 @@ class AgentPZOMD(BaseAgent):
     the observed reward. Learning rates and perturbation radii follow predefined
     decay schedules.
 
+    Parameters
+    ----------
+    n_episodes : int
+        Number of episodes to simulate in parallel.
+    init_x : torch.Tensor or list of float
+        Initial action used to initialize the optimization process in each episode.
+    project_fn : Callable[[torch.Tensor], torch.Tensor], optional
+        Projection function applied after perturbation and update steps.
+    eta_0 : float, optional
+        Initial learning rate.
+    delta_0 : float, optional
+        Initial perturbation radius.
+    min_delta : float, optional
+        Minimum allowed perturbation radius.
+    min_eta : float, optional
+        Minimum allowed learning rate.
+    max_grad_norm : float, optional
+        Maximum norm used to clip the estimated gradient.
+    name : str, optional
+        Human-readable identifier for the agent.
+
     Attributes
     ----------
     x : torch.Tensor
@@ -21,6 +42,11 @@ class AgentPZOMD(BaseAgent):
         Current learning rate.
     delta : float
         Current perturbation radius.
+
+    Raises
+    ------
+    ValueError
+        If `init_x` is not a 1D vector.
 
     Notes
     -----
@@ -42,33 +68,6 @@ class AgentPZOMD(BaseAgent):
         max_grad_norm: float = 5.0,
         name: str = "AgentPZOMD",
     ):
-        """
-        Parameters
-        ----------
-        n_episodes : int
-            Number of episodes to simulate in parallel.
-        init_x : torch.Tensor or list of float
-            Initial action used to initialize the optimization process in each episode.
-        project_fn : Callable[[torch.Tensor], torch.Tensor], optional
-            Projection function applied after perturbation and update steps.
-        eta_0 : float, optional
-            Initial learning rate.
-        delta_0 : float, optional
-            Initial perturbation radius.
-        min_delta : float, optional
-            Minimum allowed perturbation radius.
-        min_eta : float, optional
-            Minimum allowed learning rate.
-        max_grad_norm : float, optional
-            Maximum norm used to clip the estimated gradient.
-        name : str, optional
-            Human-readable identifier for the agent.
-
-        Raises
-        ------
-        ValueError
-            If `init_x` is not a 1D vector.
-        """
         init_x = torch.as_tensor(init_x)
         action_dim = init_x.numel()
 

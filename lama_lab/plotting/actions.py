@@ -6,8 +6,9 @@ from matplotlib.figure import Figure
 
 def plot_market_makers_actions_histo2d(
     actions: torch.Tensor,
+    reference_prices: torch.Tensor | None = None,
     maker_names: list[str] | None = None,
-    hist_range: tuple[float, float] = (0.0, 1.0),
+    hist_range: tuple[float, float] | None = (0.0, 1.0),
     density: bool = True,
     bins: int = 100,
     title: str = "Bid/Ask Actions",
@@ -20,6 +21,10 @@ def plot_market_makers_actions_histo2d(
     ----------
     actions : torch.Tensor
         Tensor of shape ``(N, n_makers, 2)`` containing bid/ask actions.
+        Expected to be located on the CPU.
+    reference_prices : torch.Tensor, optional
+        Tensor of shape ``(K, 2)`` containing ``(bid, ask)`` pairs to plot
+        as reference markers. Expected to be located on the CPU.
     maker_names : list of str, optional
         Names of the market makers.
     hist_range : tuple of float, optional
@@ -41,13 +46,19 @@ def plot_market_makers_actions_histo2d(
     -------
     fig : matplotlib.figure.Figure
         Figure containing the plotted 2D histograms.
+
+    Raises
+    ------
+    ValueError
+        If the length of ``maker_names`` does not match ``n_makers``, or if
+        the provided list of ``axes`` contains fewer elements than ``n_makers``.
     """
     _, n_makers, _ = actions.shape
 
     if maker_names is None:
         maker_names = [f"Maker_{i}" for i in range(n_makers)]
     elif len(maker_names) != n_makers:
-        raise ValueError("length of maker_names must match number of makers")
+        raise ValueError("Length of maker_names must match number of makers.")
 
     if axes is None:
         fig, created_axes = plt.subplots(
@@ -59,7 +70,7 @@ def plot_market_makers_actions_histo2d(
         axes = created_axes.flatten()
     else:
         if len(axes) < n_makers:
-            raise ValueError("not enough axes provided")
+            raise ValueError("Not enough axes provided.")
         fig = axes[0].figure
 
     for i in range(n_makers):
@@ -74,12 +85,22 @@ def plot_market_makers_actions_histo2d(
             ask_prices,
             bins=bins,
             cmap="viridis",
-            range=[
-                [hist_range[0], hist_range[1]],
-                [hist_range[0], hist_range[1]],
-            ],
+            range=[hist_range, hist_range],
             density=density,
         )
+
+        if reference_prices is not None:
+            ax.scatter(
+                reference_prices[:, 0],
+                reference_prices[:, 1],
+                marker="x",
+                c="red",
+                s=100,
+                linewidths=2,
+                zorder=10,
+                label="Reference Prices",
+            )
+            ax.legend()
 
         fig.colorbar(hist[3], ax=ax, label="Density")
 
@@ -88,13 +109,13 @@ def plot_market_makers_actions_histo2d(
         ax.set_title(f"{title} - {maker_names[i]}")
         ax.grid(True, linestyle="--", alpha=0.7)
 
-    plt.tight_layout()
+    fig.tight_layout()
     return fig
 
 
 def plot_market_makers_actions_dispersion_histo2d(
     actions_dispersion: torch.Tensor,
-    hist_range: tuple[float, float] = (-1.0, 1.0),
+    hist_range: tuple[float, float] | None = (0.0, 1.0),
     density: bool = True,
     bins: int = 100,
     title: str = "Market Makers Actions Dispersion",
@@ -121,7 +142,7 @@ def plot_market_makers_actions_dispersion_histo2d(
     ----------
     actions_dispersion : torch.Tensor
         Tensor of shape ``(N, 2)`` containing the bid and ask action
-        dispersion for each sample.
+        dispersion for each sample. Expected to be located on the CPU.
     hist_range : tuple of float, optional
         Range of the histogram axes for both action dimensions.
     density : bool, optional
@@ -140,49 +161,39 @@ def plot_market_makers_actions_dispersion_histo2d(
     -------
     fig : matplotlib.figure.Figure
         Figure containing the plotted 2D histogram.
+
+    Raises
+    ------
+    ValueError
+        If ``actions_dispersion`` does not have shape ``(N, 2)``.
     """
     if actions_dispersion.ndim != 2 or actions_dispersion.shape[-1] != 2:
-        raise ValueError("actions_dispersion must have shape (N, 2)")
+        raise ValueError("actions_dispersion must have shape (N, 2).")
 
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
         fig = ax.figure
 
-    points = actions_dispersion.detach().cpu()
-
-    bid_dispersion = points[:, 0]
-    ask_dispersion = points[:, 1]
+    bid_dispersion = actions_dispersion[:, 0]
+    ask_dispersion = actions_dispersion[:, 1]
 
     hist = ax.hist2d(
         bid_dispersion,
         ask_dispersion,
         bins=bins,
         cmap="viridis",
-        range=[
-            [hist_range[0], hist_range[1]],
-            [hist_range[0], hist_range[1]],
-        ],
+        range=[hist_range, hist_range],
         density=density,
     )
 
     fig.colorbar(hist[3], ax=ax, label="Density")
 
-    ax.axhline(
-        0,
-        color="white",
-        linestyle="--",
-        alpha=0.5,
-    )
-    ax.axvline(
-        0,
-        color="white",
-        linestyle="--",
-        alpha=0.5,
-    )
+    ax.axhline(0, color="white", linestyle="--", alpha=0.5)
+    ax.axvline(0, color="white", linestyle="--", alpha=0.5)
 
-    ax.set_xlabel("Bid action dispersion")
-    ax.set_ylabel("Ask action dispersion")
+    ax.set_xlabel("Bid Price")
+    ax.set_ylabel("Ask Price")
     ax.set_title(title)
     ax.grid(True, linestyle="--", alpha=0.7)
 
@@ -195,7 +206,7 @@ def plot_market_makers_actions_scatter(
     min_action_history: torch.Tensor | None = None,
     max_action_history: torch.Tensor | None = None,
     std_action_history: torch.Tensor | None = None,
-    fixed_points: torch.Tensor | None = None,
+    reference_prices: torch.Tensor | None = None,
     maker_names: list[str] | None = None,
     start_step: int = 0,
     nrows: int = 1,
@@ -209,20 +220,20 @@ def plot_market_makers_actions_scatter(
     ----------
     mean_action_history : torch.Tensor
         Tensor of shape ``(n_rounds, n_makers, 2)`` containing mean bid and ask
-        prices for each maker.
+        prices for each maker. Expected to be located on the CPU.
     min_action_history : torch.Tensor, optional
         Tensor of shape ``(n_rounds, n_makers, 2)`` containing minimum bid and
-        ask prices.
+        ask prices. Expected to be located on the CPU.
     max_action_history : torch.Tensor, optional
         Tensor of shape ``(n_rounds, n_makers, 2)`` containing maximum bid and
-        ask prices.
+        ask prices. Expected to be located on the CPU.
     std_action_history : torch.Tensor, optional
         Tensor of shape ``(n_rounds, n_makers, 2)`` containing bid and ask
-        standard deviations.
-    fixed_points : torch.Tensor, optional
-        Array-like of shape ``(N, 3)`` containing ``(b, m, a)`` tuples for each
-        interval. The lower and upper bounds ``b`` and ``a`` are used as the
-        fixed horizontal levels to draw.
+        standard deviations. Expected to be located on the CPU.
+    reference_prices : torch.Tensor, optional
+        Tensor of shape ``(K, 2)`` containing ``(bid, ask)`` pairs to draw as
+        fixed horizontal reference lines across the time series. Expected to
+        be located on the CPU.
     maker_names : list of str, optional
         Names of the market makers.
     start_step : int, optional
@@ -242,15 +253,20 @@ def plot_market_makers_actions_scatter(
     -------
     fig : matplotlib.figure.Figure
         Figure containing the plotted action history.
+
+    Raises
+    ------
+    ValueError
+        If the length of ``maker_names`` does not match ``n_makers``, or if
+        the provided list of ``axes`` contains fewer elements than ``n_makers``.
     """
     n_rounds, n_makers, _ = mean_action_history.shape
     time = range(start_step, start_step + n_rounds)
 
     if maker_names is None:
         maker_names = [f"Maker_{i}" for i in range(n_makers)]
-    else:
-        if len(maker_names) != n_makers:
-            raise ValueError("length of maker_names must match number of makers")
+    elif len(maker_names) != n_makers:
+        raise ValueError("Length of maker_names must match number of makers.")
 
     if axes is None:
         if ncols is None:
@@ -266,7 +282,7 @@ def plot_market_makers_actions_scatter(
         fig = axes[0].figure
 
     if len(axes) < n_makers:
-        raise ValueError("not enough axes provided for the number of makers")
+        raise ValueError("Not enough axes provided for the number of makers.")
 
     handles = []
     labels = []
@@ -274,27 +290,15 @@ def plot_market_makers_actions_scatter(
     for i in range(n_makers):
         ax = axes[i]
 
-        mean = mean_action_history[:, i]
-        bid_mean = mean[:, 0]
-        ask_mean = mean[:, 1]
+        bid_mean = mean_action_history[:, i, 0]
+        ask_mean = mean_action_history[:, i, 1]
 
-        ax.plot(
-            time,
-            bid_mean,
-            color="blue",
-            label="Mean Bid Price",
-        )
-        ax.plot(
-            time,
-            ask_mean,
-            color="orange",
-            label="Mean Ask Price",
-        )
+        ax.plot(time, bid_mean, color="blue", label="Mean Bid Price")
+        ax.plot(time, ask_mean, color="orange", label="Mean Ask Price")
 
         if std_action_history is not None:
-            std = std_action_history[:, i]
-            bid_std = std[:, 0]
-            ask_std = std[:, 1]
+            bid_std = std_action_history[:, i, 0]
+            ask_std = std_action_history[:, i, 1]
 
             ax.fill_between(
                 time,
@@ -314,48 +318,20 @@ def plot_market_makers_actions_scatter(
             )
 
         if min_action_history is not None:
-            minimum = min_action_history[:, i]
-            bid_min = minimum[:, 0]
-            ask_min = minimum[:, 1]
-
-            ax.plot(
-                time,
-                bid_min,
-                color="lightblue",
-                linestyle=":",
-                label="Min Bid",
-            )
-            ax.plot(
-                time,
-                ask_min,
-                color="peachpuff",
-                linestyle=":",
-                label="Min Ask",
-            )
+            bid_min = min_action_history[:, i, 0]
+            ask_min = min_action_history[:, i, 1]
+            ax.plot(time, bid_min, color="lightblue", linestyle=":", label="Min Bid")
+            ax.plot(time, ask_min, color="peachpuff", linestyle=":", label="Min Ask")
 
         if max_action_history is not None:
-            maximum = max_action_history[:, i]
-            bid_max = maximum[:, 0]
-            ask_max = maximum[:, 1]
+            bid_max = max_action_history[:, i, 0]
+            ask_max = max_action_history[:, i, 1]
+            ax.plot(time, bid_max, color="darkblue", linestyle=":", label="Max Bid")
+            ax.plot(time, ask_max, color="darkorange", linestyle=":", label="Max Ask")
 
-            ax.plot(
-                time,
-                bid_max,
-                color="darkblue",
-                linestyle=":",
-                label="Max Bid",
-            )
-            ax.plot(
-                time,
-                ask_max,
-                color="darkorange",
-                linestyle=":",
-                label="Max Ask",
-            )
-
-        if fixed_points is not None:
-            fixed_bid_points = fixed_points[:, 0]
-            fixed_ask_points = fixed_points[:, 2]
+        if reference_prices is not None:
+            fixed_bid_points = reference_prices[:, 0]
+            fixed_ask_points = reference_prices[:, 1]
 
             ax.hlines(
                 fixed_bid_points,
@@ -364,7 +340,7 @@ def plot_market_makers_actions_scatter(
                 color="blue",
                 alpha=0.5,
                 linestyle="--",
-                label="Fixed Bid",
+                label="Reference Bid",
             )
             ax.hlines(
                 fixed_ask_points,
@@ -373,7 +349,7 @@ def plot_market_makers_actions_scatter(
                 color="orange",
                 alpha=0.5,
                 linestyle="--",
-                label="Fixed Ask",
+                label="Reference Ask",
             )
 
         ax.set_title(f"Actions - {maker_names[i]}")
@@ -383,12 +359,14 @@ def plot_market_makers_actions_scatter(
         if i == 0:
             handles, labels = ax.get_legend_handles_labels()
 
+    unique_labels = dict(zip(labels, handles))
+
     fig.tight_layout(rect=[0, 0.08, 1, 1])
     fig.legend(
-        handles,
-        labels,
+        unique_labels.values(),
+        unique_labels.keys(),
         loc="lower center",
         bbox_to_anchor=(0.5, 0),
-        ncol=4 if fixed_points is None else 5,
+        ncol=len(unique_labels),
     )
     return fig

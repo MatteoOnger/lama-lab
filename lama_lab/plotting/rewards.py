@@ -22,13 +22,16 @@ def plot_rewards_scatter(
     ----------
     mean_reward_history : torch.Tensor
         Tensor of shape ``(n_rounds, n_makers)`` containing mean rewards.
+        Expected to be located on the CPU.
     min_reward_history : torch.Tensor, optional
         Tensor of shape ``(n_rounds, n_makers)`` containing minimum rewards.
+        Expected to be located on the CPU.
     max_reward_history : torch.Tensor, optional
         Tensor of shape ``(n_rounds, n_makers)`` containing maximum rewards.
+        Expected to be located on the CPU.
     std_reward_history : torch.Tensor, optional
         Tensor of shape ``(n_rounds, n_makers)`` containing reward standard
-        deviations.
+        deviations. Expected to be located on the CPU.
     maker_names : list of str, optional
         Names of the market makers.
     start_step : int, optional
@@ -48,15 +51,20 @@ def plot_rewards_scatter(
     -------
     fig : matplotlib.figure.Figure
         Figure containing the plotted reward history.
+
+    Raises
+    ------
+    ValueError
+        If the length of ``maker_names`` does not match ``n_makers``, or if
+        the provided list of ``axes`` contains fewer elements than ``n_makers``.
     """
     n_rounds, n_makers = mean_reward_history.shape
     time = range(start_step, start_step + n_rounds)
 
     if maker_names is None:
         maker_names = [f"Maker_{i}" for i in range(n_makers)]
-    else:
-        if len(maker_names) != n_makers:
-            raise ValueError("length of maker_names must match number of makers")
+    elif len(maker_names) != n_makers:
+        raise ValueError("Length of maker_names must match number of makers.")
 
     if axes is None:
         if ncols is None:
@@ -72,7 +80,7 @@ def plot_rewards_scatter(
         fig = axes[0].figure
 
     if len(axes) < n_makers:
-        raise ValueError("not enough axes provided for the number of makers")
+        raise ValueError("Not enough axes provided for the number of makers.")
 
     handles = []
     labels = []

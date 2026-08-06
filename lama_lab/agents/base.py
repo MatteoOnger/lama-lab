@@ -10,32 +10,22 @@ class BaseAgent(ABC):
     parameter validation. Subclasses must implement the specific logic
     in the protected methods :meth:`_act` and :meth:`_update`.
 
-    Attributes
+    Parameters
     ----------
     n_episodes : int
-        Number of parallel episodes handled by the agent.
+        Number of episodes to simulate in parallel. Must be positive.
     action_dim : int
-        Dimensionality of the action space.
+        Dimensionality of the action space. Must be positive.
     name : str
         Human-readable name of the agent.
+
+    Raises
+    ------
+    ValueError
+        If `n_episodes` or `action_dim` are not strictly positive.
     """
 
     def __init__(self, n_episodes: int, action_dim: int, name: str):
-        """
-        Parameters
-        ----------
-        n_episodes : int
-            Number of episodes to simulate in parallel. Must be positive.
-        action_dim : int
-            Dimensionality of the action space. Must be positive.
-        name : str
-            Human-readable name of the agent.
-
-        Raises
-        ------
-        ValueError
-            If `n_episodes` or `action_dim` are not strictly positive.
-        """
         if n_episodes <= 0:
             raise ValueError("n_episodes must be positive.")
         if action_dim <= 0:

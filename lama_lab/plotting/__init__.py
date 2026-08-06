@@ -1,4 +1,4 @@
-"""Plotting utilities for the LAMA lab package."""
+"""Plotting utilities."""
 
 from . import actions
 from . import distributions
