@@ -41,21 +41,6 @@ class Experiment:
         }
         return
 
-    def _file(self, filename: str | Path) -> Path:
-        """Construct a full path for a file inside the experiment directory.
-
-        Parameters
-        ----------
-        filename : str or Path
-            Name or relative path of the file.
-
-        Returns
-        -------
-        path : Path
-            Full path resolved within the experiment directory.
-        """
-        return self.path / filename
-
     def _get_path(self, name: str | Path, extension: str) -> Path:
         """Resolve a file path within the experiment directory and append the extension if missing.
 
@@ -72,10 +57,25 @@ class Experiment:
             Full path resolved within the experiment directory, guaranteed to end
             with the specified extension.
         """
-        file_path = self._file(name)
+        file_path = self.file(name)
         if not file_path.name.endswith(extension):
             file_path = file_path.with_name(f"{file_path.name}{extension}")
         return file_path
+
+    def file(self, filename: str | Path) -> Path:
+        """Construct a full path for a file inside the experiment directory.
+
+        Parameters
+        ----------
+        filename : str or Path
+            Name or relative path of the file.
+
+        Returns
+        -------
+        path : Path
+            Full path resolved within the experiment directory.
+        """
+        return self.path / filename
 
     def load_all(self) -> dict[str, Any]:
         """Load all recognized files from the experiment directory into a dictionary.
