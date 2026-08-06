@@ -26,7 +26,35 @@ class Experiment:
     def __init__(self, path: str | Path):
         self.path = Path(path).resolve()
         self.path.mkdir(parents=True, exist_ok=True)
+
+        self._save_dispatch = {
+            torch.Tensor: self.save_tensor,
+            Figure: self.save_figure,
+            str: self.save_text,
+        }
+
+        self._load_dispatch = {
+            ".pt": self.load_tensor,
+            ".json": self.load_json,
+            ".pkl": self.load_pickle,
+            ".txt": self.load_text,
+        }
         return
+
+    def _file(self, filename: str | Path) -> Path:
+        """Construct a full path for a file inside the experiment directory.
+
+        Parameters
+        ----------
+        filename : str or Path
+            Name or relative path of the file.
+
+        Returns
+        -------
+        path : Path
+            Full path resolved within the experiment directory.
+        """
+        return self.path / filename
 
     def _get_path(self, name: str | Path, extension: str) -> Path:
         """Resolve a file path within the experiment directory and append the extension if missing.
@@ -44,25 +72,34 @@ class Experiment:
             Full path resolved within the experiment directory, guaranteed to end
             with the specified extension.
         """
-        file_path = self.file(name)
+        file_path = self._file(name)
         if not file_path.name.endswith(extension):
             file_path = file_path.with_name(f"{file_path.name}{extension}")
         return file_path
 
-    def file(self, filename: str | Path) -> Path:
-        """Construct a full path for a file inside the experiment directory.
+    def load_all(self) -> dict[str, Any]:
+        """Load all recognized files from the experiment directory into a dictionary.
 
-        Parameters
-        ----------
-        filename : str or Path
-            Name or relative path of the file.
+        Files are loaded automatically based on their extension. Unrecognized
+        extensions are silently ignored.
 
         Returns
         -------
-        path : Path
-            Full path resolved within the experiment directory.
+        artifacts : dict of str to Any
+            Dictionary mapping full file names (including extensions) to their
+            loaded Python objects.
         """
-        return self.path / filename
+        artifacts = {}
+        for file_path in self.path.iterdir():
+            if not file_path.is_file():
+                continue
+
+            ext = file_path.suffix.lower()
+
+            if ext in self._load_dispatch:
+                load_func = self._load_dispatch[ext]
+                artifacts[file_path.name] = load_func(file_path.name)
+        return artifacts
 
     def load_json(self, name: str | Path, encoding: str = "utf-8") -> Any:
         """Load data from a JSON file.
@@ -76,7 +113,7 @@ class Experiment:
 
         Returns
         -------
-        obj : Any
+        artifact : Any
             Deserialized JSON object.
 
         Raises
@@ -173,6 +210,33 @@ class Experiment:
         if not file_path.is_file():
             raise FileNotFoundError(f"Text file not found: {file_path}.")
         return file_path.read_text(encoding=encoding)
+
+    def save_all(self, artifacts: dict[str, Any]) -> None:
+        """Save a dictionary of heterogeneous objects automatically routing them to the correct format.
+
+        Parameters
+        ----------
+        artifacts : dict of str to Any
+            Dictionary where keys are file names (or base names) and values are
+            the objects to save. The correct saving method is automatically inferred
+            from the object's type.
+        """
+        for name, obj in artifacts.items():
+            saved = False
+
+            for obj_type, save_func in self._save_dispatch.items():
+                if isinstance(obj, obj_type):
+                    save_func(name, obj)
+                    saved = True
+                    break
+
+            if not saved:
+                try:
+                    json.dumps(obj)
+                    self.save_json(name, obj)
+                except TypeError:
+                    self.save_pickle(name, obj)
+        return
 
     def save_figure(
         self,

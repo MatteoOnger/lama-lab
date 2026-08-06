@@ -132,27 +132,37 @@ for _ in range(n_rounds):
 last_actions = last_action_history.get_all().reshape(-1, n_makers, 2)
 dispersion = analysis.actions.compute_action_dispersion(
     last_actions,
-    reduce_features=False,
+    reduce_action_dim=False,
 )
 
-plotting.actions.plot_market_makers_actions_scatter(
-    mean_action_history.get_all(),
-    min_action_history.get_all(),
-    max_action_history.get_all(),
-    std_action_history.get_all(),
-    fixed_points=fixed_points,
-)
-plotting.rewards.plot_rewards_scatter(
-    mean_reward_history.get_all(),
-    min_reward_history.get_all(),
-    max_reward_history.get_all(),
-    std_reward_history.get_all(),
-)
-plotting.actions.plot_market_makers_actions_histo2d(
-    last_actions, title="Bid/Ask Actions at the End of Training"
-)
-plotting.actions.plot_market_makers_actions_dispersion_histo2d(
+# plotting.actions.plot_market_makers_actions_scatter(
+#     mean_action_history.get_all(),
+#     min_action_history.get_all(),
+#     max_action_history.get_all(),
+#     std_action_history.get_all(),
+#     reference_prices=fixed_points[:, [0, 2]],
+# )
+# plotting.rewards.plot_rewards_scatter(
+#     mean_reward_history.get_all(),
+#     min_reward_history.get_all(),
+#     max_reward_history.get_all(),
+#     std_reward_history.get_all(),
+# )
+# plotting.actions.plot_market_makers_actions_histo2d(
+#     last_actions,
+#     title="Bid/Ask Actions at the End of Training",
+#     reference_prices=fixed_points[:, [0, 2]],
+# )
+
+fig = plotting.actions.plot_market_makers_actions_dispersion_histo2d(
     dispersion, title="Market Makers Actions Dispersion at the End of Training"
 )
 
-plt.show()
+from lama_lab.utils import ResultsManager
+
+manager = ResultsManager("./results")
+experiment = manager.new_experiment("prova")
+
+experiment.save_all(
+    {"fig": fig, "text": "ad", "tensor": last_actions, "maker": makers[0]}
+)
