@@ -9,7 +9,7 @@ import torch
 from matplotlib.figure import Figure
 
 
-class Experiment:
+class ExperimentManager:
     """Represents a single experiment directory for managing artifacts.
 
     Provides high-level methods to save and load data artifacts such as
@@ -363,7 +363,7 @@ class Experiment:
         file_path.write_text(text, encoding=encoding)
         return file_path
 
-    def __enter__(self) -> "Experiment":
+    def __enter__(self) -> "ExperimentManager":
         """Enter the context manager."""
         return self
 
@@ -386,7 +386,7 @@ class ResultsManager:
         self.root.mkdir(parents=True, exist_ok=True)
         return
 
-    def get_experiment(self, name: str | Path) -> Experiment:
+    def get_experiment(self, name: str | Path) -> ExperimentManager:
         """Load an existing experiment directory.
 
         Parameters
@@ -407,7 +407,7 @@ class ResultsManager:
         path = self.root / name
         if not path.is_dir():
             raise FileNotFoundError(f"Experiment directory not found: {path}")
-        return Experiment(path)
+        return ExperimentManager(path)
 
     def list_experiments(self) -> list[Path]:
         """List all experiment subdirectories under root sorted by creation time.
@@ -419,7 +419,7 @@ class ResultsManager:
         """
         return sorted([p for p in self.root.iterdir() if p.is_dir()])
 
-    def new_experiment(self, name: str | None = None) -> Experiment:
+    def new_experiment(self, name: str | None = None) -> ExperimentManager:
         """Create a new timestamped experiment directory.
 
         Parameters
@@ -442,4 +442,4 @@ class ResultsManager:
             i += 1
 
         path.mkdir(parents=True, exist_ok=False)
-        return Experiment(path)
+        return ExperimentManager(path)
