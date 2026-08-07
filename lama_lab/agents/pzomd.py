@@ -25,6 +25,10 @@ class AgentPZOMD(BaseAgent):
         Initial learning rate.
     delta_0 : float, optional
         Initial perturbation radius.
+    decay_eta : float, optional
+        Exponent for the learning rate decay schedule (t^-decay_eta).
+    decay_delta : float, optional
+        Exponent for the perturbation radius decay schedule (t^-decay_delta).
     min_delta : float, optional
         Minimum allowed perturbation radius.
     min_eta : float, optional
@@ -63,6 +67,8 @@ class AgentPZOMD(BaseAgent):
         project_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
         eta_0: float = 0.05,
         delta_0: float = 0.01,
+        decay_eta: float = 0.75,
+        decay_delta: float = 0.25,
         min_delta: float = 0.005,
         min_eta: float = 0.001,
         max_grad_norm: float = 5.0,
@@ -79,6 +85,8 @@ class AgentPZOMD(BaseAgent):
         self.project_fn = project_fn if project_fn is not None else (lambda x: x)
         self.eta_0 = eta_0
         self.delta_0 = delta_0
+        self.decay_eta = decay_eta
+        self.decay_delta = decay_delta
         self.min_delta = min_delta
         self.min_eta = min_eta
         self.max_grad_norm = max_grad_norm
@@ -92,8 +100,8 @@ class AgentPZOMD(BaseAgent):
         return
 
     def _act(self) -> torch.Tensor:
-        self.delta = max(self.delta_0 * (self._t**-0.5), self.min_delta)
-        self.eta = max(self.eta_0 * (self._t**-0.75), self.min_eta)
+        self.delta = max(self.delta_0 * (self._t**-self.decay_delta), self.min_delta)
+        self.eta = max(self.eta_0 * (self._t**-self.decay_eta), self.min_eta)
 
         z = torch.randn(
             self.n_episodes,
@@ -105,10 +113,6 @@ class AgentPZOMD(BaseAgent):
             torch.linalg.norm(z, dim=1, keepdim=True),
             min=1e-8,
         )
-        # TODO (Future Refinement):
-        # Avoid projecting perturbed actions near boundaries, as it biases the
-        # zeroth-order gradient estimate. Keep self.x in a delta-shrunk feasible domain
-        # so that x + delta * u remains valid without projection (Flaxman et al., 2005).
         x_perturbed = self.project_fn(self.x + self.delta * self._u)
         return x_perturbed
 
