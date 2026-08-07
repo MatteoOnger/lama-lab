@@ -2,7 +2,6 @@ import logging
 import traceback
 from pathlib import Path
 
-import matplotlib
 import matplotlib.pyplot as plt
 import torch
 
@@ -96,9 +95,9 @@ def run_pipeline():
             # -------------------------------------------------------------------------
             config = {
                 "n_makers": 2,
-                "n_episodes": 2,
-                "n_rounds": 10_000,
-                "n_samples": 10_000,
+                "n_episodes": 100_000,
+                "n_rounds": 50_000,
+                "n_samples": 2**25,
                 "epsilon": 0.001,
                 "device": device,
                 "generator": {
@@ -218,7 +217,6 @@ def run_pipeline():
 
                 last_reward_history.append(rewards)
 
-                # Progress logging
                 if (round_idx + 1) % (n_rounds // 10) == 0:
                     logger.info(
                         f"Progress: {round_idx + 1}/{n_rounds} rounds completed."
@@ -240,6 +238,7 @@ def run_pipeline():
             )
 
             metrics = {
+                "fixed_points": fixed_points.tolist(),
                 "mean_action": mean_action_history.get_all().mean(0).tolist(),
                 "final_mean_action": final_actions.mean(0).tolist(),
                 "mean_reward": mean_reward_history.get_all().mean(0).tolist(),
@@ -255,7 +254,7 @@ def run_pipeline():
             logger.info("Generating figures (headless mode).")
 
             fig_distribution = plotting.distributions.plot_distribution(
-                samples, fixed_points
+                samples.cpu(), fixed_points
             )
             fig_actions_scatter = plotting.actions.plot_market_makers_actions_scatter(
                 mean_action_history.get_all(),
@@ -278,6 +277,7 @@ def run_pipeline():
             fig_dispersion_histo2d = (
                 plotting.actions.plot_market_makers_actions_dispersion_histo2d(
                     dispersion,
+                    hist_range=(0.0, 0.2),
                     title="Market Makers Actions Dispersion at the End of Training",
                 )
             )
@@ -290,18 +290,14 @@ def run_pipeline():
             artifacts = {
                 "config": config,
                 "metrics": metrics,
-                "fixed_points": fixed_points,
-                "samples": samples,
-                "final_actions": final_actions,
-                "dispersion": dispersion,
-                "mean_action_history": mean_action_history.get_all(),
-                "mean_reward_history": mean_reward_history.get_all(),
+                # "mean_action_history": mean_action_history.get_all(),
+                # "mean_reward_history": mean_reward_history.get_all(),
                 "trained_agents": makers,
-                "fig_distribution": fig_distribution,
-                "fig_actions_scatter": fig_actions_scatter,
-                "fig_rewards_scatter": fig_rewards_scatter,
-                "fig_actions_histo2d": fig_actions_histo2d,
-                "fig_dispersion_histo2d": fig_dispersion_histo2d,
+                "fig_01_distribution": fig_distribution,
+                "fig_02_actions_scatter": fig_actions_scatter,
+                "fig_03_rewards_scatter": fig_rewards_scatter,
+                "fig_04_last_actions_histo2d": fig_actions_histo2d,
+                "fig_05_dispersion_histo2d": fig_dispersion_histo2d,
             }
             exp.save_all(artifacts)
 
