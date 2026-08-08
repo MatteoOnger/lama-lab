@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 import torch
 
@@ -60,14 +61,6 @@ class BaseAgent(ABC):
             )
         return action
 
-    @abstractmethod
-    def _act(self) -> torch.Tensor:
-        """Internal action-selection routine.
-
-        To be implemented by subclasses.
-        """
-        raise NotImplementedError
-
     def update(self, reward: torch.Tensor) -> None:
         """Update the agent's internal parameters using the received reward(s).
 
@@ -90,6 +83,26 @@ class BaseAgent(ABC):
 
         self._update(reward)
         return
+
+    def get_internal_state(self) -> dict[str, Any]:
+        """Retrieve the agent's internal state for logging purposes.
+
+        Returns
+        -------
+        state : dict
+            A dictionary containing the agent's internal variables
+            (e.g., learning rates, exploration parameters). Defaults
+            to an empty dictionary if not overridden.
+        """
+        return {}
+
+    @abstractmethod
+    def _act(self) -> torch.Tensor:
+        """Internal action-selection routine.
+
+        To be implemented by subclasses.
+        """
+        raise NotImplementedError
 
     @abstractmethod
     def _update(self, reward: torch.Tensor) -> None:

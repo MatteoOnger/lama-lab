@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Any, Callable
 
 import torch
 
@@ -128,3 +128,10 @@ class AgentPZOMD(BaseAgent):
         self.x = self.project_fn(self.x + self.eta * g_hat)
         self._t += 1
         return
+
+    def get_internal_state(self) -> dict[str, Any]:
+        return {
+            "t": int(self._t),
+            "eta": float(self.eta),
+            "delta": float(self.delta),
+        }
