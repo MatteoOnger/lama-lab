@@ -1,18 +1,18 @@
-import logging
+import argparse
+import copy
 import traceback
-from pathlib import Path
+import yaml
 
 import matplotlib.pyplot as plt
 import torch
 
+import lama_lab.agents as agents
 import lama_lab.analysis as analysis
 import lama_lab.plotting as plotting
-from lama_lab.agents import AgentPZOMD
 from lama_lab.envs import MarketMakingEnvironment
 from lama_lab.generators import GaussianMixtureGenerator
 from lama_lab.projectors import MarketMakingProjector
-from lama_lab.utils import ResultsManager
-from lama_lab.utils.buffers import RingBuffer
+from lama_lab.utils import ResultsManager, RingBuffer, deep_update, setup_logger
 
 # Disable interactive plotting mode to optimize memory usage
 plt.ioff()
@@ -21,69 +21,14 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 torch.set_default_device(device)
 
 
-def setup_logger(
-    log_path: Path,
-    level: int | str = logging.INFO,
-    capture_loggers: list[str] | None = None,
-) -> logging.Logger:
-    """Sets up experiment logging to both console and file.
+def run_pipeline(results_dir="./results", config_override=None):
+    manager = ResultsManager(results_dir)
+    exp_name = config_override.get("experiment_name", None) if config_override else None
 
-    Parameters
-    ----------
-    log_path : Path
-        Path to the destination log file.
-    level : int or str, default=logging.INFO
-        Logging threshold level (e.g., logging.INFO, logging.DEBUG, "INFO").
-    capture_loggers : list of str, optional
-        Names of additional loggers to capture (e.g., ["lama_lab"]).
+    with manager.new_experiment(name=exp_name) as exp:
 
-    Returns
-    -------
-    logging.Logger
-        Main logger instance for the script.
-    """
-    if isinstance(level, str):
-        level = getattr(logging, level.upper(), logging.INFO)
-
-    formatter = logging.Formatter(
-        "%(asctime)s | %(levelname)s | %(name)s:%(funcName)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-
-    # Shared Handlers
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    console_handler.setLevel(level)
-
-    file_handler = logging.FileHandler(log_path)
-    file_handler.setFormatter(formatter)
-    file_handler.setLevel(level)
-
-    # Define all logger names to attach handlers to
-    targets = ["ExperimentLogger"]
-    if capture_loggers:
-        targets.extend(capture_loggers)
-
-    for logger_name in targets:
-        logger = logging.getLogger(logger_name)
-        logger.setLevel(level)
-        if logger.hasHandlers():
-            logger.handlers.clear()
-        logger.addHandler(console_handler)
-        logger.addHandler(file_handler)
-
-    return logging.getLogger("ExperimentLogger")
-
-
-def run_pipeline():
-    manager = ResultsManager("./results")
-
-    with manager.new_experiment(name="market_making_pzomd") as exp:
-
-        # Capture main script logs and all internal logs from lama_lab package
         logger = setup_logger(
             log_path=exp.file("execution.log"),
-            level=logging.INFO,
             capture_loggers=["lama_lab"],
         )
 
@@ -93,13 +38,11 @@ def run_pipeline():
             # -------------------------------------------------------------------------
             # Configuration
             # -------------------------------------------------------------------------
-            config = {
+            default_config = {
                 "n_makers": 2,
-                "n_episodes": 100_000,
-                "n_rounds": 50_000,
-                "n_samples": 2**25,
+                "n_episodes": 100,
+                "n_rounds": 10_000,
                 "epsilon": 0.001,
-                "device": device,
                 "generator": {
                     "weights": [0.0, 1.0, 0.0],
                     "means": [0.15, 0.5, 0.85],
@@ -108,14 +51,24 @@ def run_pipeline():
                     "clamp_max": 1.0,
                 },
                 "agent": {
+                    "type": "AgentPZOMD",
                     "init_x": [0.25, 0.75],
                     "eta_0": 0.05,
                     "delta_0": 1.0,
                     "min_eta": 0.001,
                     "min_delta": 0.001,
                 },
+                "n_samples": 2**15,
+                "history_window": 10,
             }
 
+            config = default_config
+            if config_override:
+                config = deep_update(default_config, config_override)
+
+            logger.info(
+                f"Final Configuration:\n{yaml.dump(config).removesuffix('\n')}."
+            )
             logger.info("Setting up environment, generators, and agents.")
 
             # -------------------------------------------------------------------------
@@ -143,16 +96,22 @@ def run_pipeline():
                 epsilon=config["epsilon"],
             )
 
-            makers = [
-                AgentPZOMD(
+            agent_config = copy.deepcopy(config["agent"])
+            agent_type = agent_config.pop("type")
+
+            if hasattr(agents, agent_type):
+                AgentClass = getattr(agents, agent_type)
+            else:
+                raise ValueError(
+                    f"Agent class '{agent_type}' not found in lama_lab.agents."
+                )
+
+            makers: list[agents.BaseAgent] = [
+                AgentClass(
                     n_episodes=config["n_episodes"],
-                    init_x=config["agent"]["init_x"],
                     project_fn=projector,
-                    eta_0=config["agent"]["eta_0"],
-                    delta_0=config["agent"]["delta_0"],
-                    min_eta=config["agent"]["min_eta"],
-                    min_delta=config["agent"]["min_delta"],
                     name=f"Maker {i}",
+                    **agent_config,
                 )
                 for i in range(config["n_makers"])
             ]
@@ -168,28 +127,30 @@ def run_pipeline():
             # -------------------------------------------------------------------------
             n_makers = config["n_makers"]
             n_rounds = config["n_rounds"]
+            n_episodes = config["n_episodes"]
+            window = config["history_window"]
 
-            mean_action_history = RingBuffer(
-                n_rounds, shape=(n_makers, 2), device="cpu"
-            )
-            min_action_history = RingBuffer(n_rounds, shape=(n_makers, 2), device="cpu")
-            max_action_history = RingBuffer(n_rounds, shape=(n_makers, 2), device="cpu")
-            std_action_history = RingBuffer(n_rounds, shape=(n_makers, 2), device="cpu")
+            action_history = {
+                "mean": RingBuffer(n_rounds, shape=(n_makers, 2), device="cpu"),
+                "min": RingBuffer(n_rounds, shape=(n_makers, 2), device="cpu"),
+                "max": RingBuffer(n_rounds, shape=(n_makers, 2), device="cpu"),
+                "std": RingBuffer(n_rounds, shape=(n_makers, 2), device="cpu"),
+                "first": RingBuffer(
+                    window, shape=(n_episodes, n_makers, 2), device="cpu"
+                ),
+                "last": RingBuffer(
+                    window, shape=(n_episodes, n_makers, 2), device="cpu"
+                ),
+            }
 
-            last_action_history = RingBuffer(
-                10,
-                shape=(config["n_episodes"], n_makers, 2),
-                device="cpu",
-            )
-
-            mean_reward_history = RingBuffer(n_rounds, shape=(n_makers,), device="cpu")
-            min_reward_history = RingBuffer(n_rounds, shape=(n_makers,), device="cpu")
-            max_reward_history = RingBuffer(n_rounds, shape=(n_makers,), device="cpu")
-            std_reward_history = RingBuffer(n_rounds, shape=(n_makers,), device="cpu")
-
-            last_reward_history = RingBuffer(
-                10, shape=(config["n_episodes"], n_makers), device="cpu"
-            )
+            reward_history = {
+                "mean": RingBuffer(n_rounds, shape=(n_makers,), device="cpu"),
+                "min": RingBuffer(n_rounds, shape=(n_makers,), device="cpu"),
+                "max": RingBuffer(n_rounds, shape=(n_makers,), device="cpu"),
+                "std": RingBuffer(n_rounds, shape=(n_makers,), device="cpu"),
+                "first": RingBuffer(window, shape=(n_episodes, n_makers), device="cpu"),
+                "last": RingBuffer(window, shape=(n_episodes, n_makers), device="cpu"),
+            }
 
             # -------------------------------------------------------------------------
             # Simulation Loop
@@ -203,21 +164,25 @@ def run_pipeline():
                 for j, maker in enumerate(makers):
                     maker.update(rewards[:, j])
 
-                mean_action_history.append(last_actions.mean(dim=0))
-                min_action_history.append(last_actions.amin(dim=0))
-                max_action_history.append(last_actions.amax(dim=0))
-                std_action_history.append(last_actions.std(dim=0))
+                action_history["mean"].append(last_actions.mean(dim=0))
+                action_history["min"].append(last_actions.amin(dim=0))
+                action_history["max"].append(last_actions.amax(dim=0))
+                action_history["std"].append(last_actions.std(dim=0))
 
-                last_action_history.append(last_actions)
+                reward_history["mean"].append(rewards.mean(dim=0))
+                reward_history["min"].append(rewards.amin(dim=0))
+                reward_history["max"].append(rewards.amax(dim=0))
+                reward_history["std"].append(rewards.std(dim=0))
 
-                mean_reward_history.append(rewards.mean(dim=0))
-                min_reward_history.append(rewards.amin(dim=0))
-                max_reward_history.append(rewards.amax(dim=0))
-                std_reward_history.append(rewards.std(dim=0))
+                if round_idx < window:
+                    action_history["first"].append(last_actions)
+                    reward_history["first"].append(rewards)
 
-                last_reward_history.append(rewards)
+                if round_idx >= n_rounds - window:
+                    action_history["last"].append(last_actions)
+                    reward_history["last"].append(rewards)
 
-                if (round_idx + 1) % (n_rounds // 10) == 0:
+                if (round_idx + 1) % max(1, (n_rounds // 10)) == 0:
                     logger.info(
                         f"Progress: {round_idx + 1}/{n_rounds} rounds completed."
                     )
@@ -225,27 +190,97 @@ def run_pipeline():
             logger.info("Simulation completed successfully.")
 
             # -------------------------------------------------------------------------
-            # Analysis & Metrics
+            # Analysis & Metrics Computation
             # -------------------------------------------------------------------------
             logger.info("Computing analysis metrics.")
 
-            final_actions = last_action_history.get_all().reshape(-1, n_makers, 2)
-            final_rewards = last_reward_history.get_all().reshape(-1, n_makers)
+            expected_spread = fixed_points[:, 2] - fixed_points[:, 0]
 
-            dispersion = analysis.actions.compute_action_dispersion(
-                final_actions,
+            # shape: (n_rounds, n_makers, 2)
+            action_means_all = action_history["mean"].get_all()
+            action_stds_all = action_history["std"].get_all()
+
+            # shape: (n_rounds, n_makers)
+            reward_means_all = reward_history["mean"].get_all()
+            reward_stds_all = reward_history["std"].get_all()
+
+            # shape: (history_window, n_episodes, n_makers, 2)
+            first_actions = action_history["first"].get_all()
+            last_actions = action_history["last"].get_all()
+
+            # shape: (history_window, n_episodes, n_makers)
+            first_rewards = reward_history["first"].get_all()
+            last_rewards = reward_history["last"].get_all()
+
+            first_actions_reshaped = first_actions.reshape(-1, n_makers, 2)
+            first_actions_dispersion = analysis.actions.compute_action_dispersion(
+                first_actions_reshaped,
                 reduce_action_dim=False,
             )
 
+            last_actions_reshaped = last_actions.reshape(-1, n_makers, 2)
+            last_actions_dispersion = analysis.actions.compute_action_dispersion(
+                last_actions_reshaped,
+                reduce_action_dim=False,
+            )
+
+            # Aggregate calculations per agent, preserving the n_makers dimension.
+            # shape: (n_makers, 2)
+            agent_mean_actions = action_means_all.mean(dim=0)
+            agent_std_actions = action_stds_all.mean(dim=0)
+
+            # shape: (n_makers,)
+            agent_spreads = agent_mean_actions[:, 1] - agent_mean_actions[:, 0]
+
+            # shape: (n_makers,)
+            agent_mean_rewards = reward_means_all.mean(dim=0)
+            agent_std_rewards = reward_stds_all.mean(dim=0)
+
+            # shape: (n_makers, 2)
+            agent_first_actions = first_actions.mean(dim=(0, 1))
+            agent_last_actions = last_actions.mean(dim=(0, 1))
+
+            # shape: (n_makers,)
+            agent_first_rewards = first_rewards.mean(dim=(0, 1))
+            agent_last_rewards = last_rewards.mean(dim=(0, 1))
+
             metrics = {
-                "fixed_points": fixed_points.tolist(),
-                "mean_action": mean_action_history.get_all().mean(0).tolist(),
-                "final_mean_action": final_actions.mean(0).tolist(),
-                "mean_reward": mean_reward_history.get_all().mean(0).tolist(),
-                "final_mean_reward": final_rewards.mean(0).tolist(),
-                "dispersion": dispersion.mean().tolist(),
-                "std_action": std_action_history.get_all().mean(0).tolist(),
-                "std_reward": std_reward_history.get_all().mean(0).tolist(),
+                "fixed_points": {
+                    "vals": fixed_points[:, [0, 2]].tolist(),
+                    "spread": expected_spread.tolist(),
+                },
+                "global": {
+                    "actions": {
+                        "mean": action_means_all.mean(dim=(0, 1)).tolist(),
+                        "std": action_stds_all.mean(dim=(0, 1)).tolist(),
+                        "first_window_mean": first_actions.mean(dim=(0, 1, 2)).tolist(),
+                        "last_window_mean": last_actions.mean(dim=(0, 1, 2)).tolist(),
+                        "fist_window_dispersion": first_actions_dispersion.mean().item(),
+                        "last_window_dispersion": last_actions_dispersion.mean().item(),
+                    },
+                    "rewards": {
+                        "mean": reward_means_all.mean().item(),
+                        "std": reward_stds_all.mean().item(),
+                        "first_window_mean": first_rewards.mean().item(),
+                        "last_window_mean": last_rewards.mean().item(),
+                    },
+                },
+                "per_agent": {
+                    "actions": {
+                        "mean": agent_mean_actions.tolist(),
+                        "std": agent_std_actions.tolist(),
+                        "spread": agent_spreads.tolist(),
+                        "first_window_mean": agent_first_actions.tolist(),
+                        "last_window_mean": agent_last_actions.tolist(),
+                    },
+                    "rewards": {
+                        "mean": agent_mean_rewards.tolist(),
+                        "std": agent_std_rewards.tolist(),
+                        "first_window_mean": agent_first_rewards.tolist(),
+                        "last_window_mean": agent_last_rewards.tolist(),
+                    },
+                    "internal_states": [maker.get_internal_state() for maker in makers],
+                },
             }
 
             # -------------------------------------------------------------------------
@@ -257,27 +292,32 @@ def run_pipeline():
                 samples.cpu(), fixed_points
             )
             fig_actions_scatter = plotting.actions.plot_market_makers_actions_scatter(
-                mean_action_history.get_all(),
-                min_action_history.get_all(),
-                max_action_history.get_all(),
-                std_action_history.get_all(),
+                action_history["mean"].get_all(),
+                action_history["min"].get_all(),
+                action_history["max"].get_all(),
+                action_history["std"].get_all(),
                 reference_prices=fixed_points[:, [0, 2]],
             )
             fig_rewards_scatter = plotting.rewards.plot_rewards_scatter(
-                mean_reward_history.get_all(),
-                min_reward_history.get_all(),
-                max_reward_history.get_all(),
-                std_reward_history.get_all(),
+                reward_history["mean"].get_all(),
+                reward_history["min"].get_all(),
+                reward_history["max"].get_all(),
+                reward_history["std"].get_all(),
             )
             fig_actions_histo2d = plotting.actions.plot_market_makers_actions_histo2d(
-                final_actions,
+                last_actions_reshaped,
                 title="Bid/Ask Actions at the End of Training",
                 reference_prices=fixed_points[:, [0, 2]],
             )
-            fig_dispersion_histo2d = (
+            fig_first_dispersion_histo2d = plotting.actions.plot_market_makers_actions_dispersion_histo2d(
+                first_actions_dispersion,
+                hist_range=None,
+                title="Market Makers Actions Dispersion at the Beginning of Training",
+            )
+            fig_last_dispersion_histo2d = (
                 plotting.actions.plot_market_makers_actions_dispersion_histo2d(
-                    dispersion,
-                    hist_range=(0.0, 0.2),
+                    last_actions_dispersion,
+                    hist_range=None,
                     title="Market Makers Actions Dispersion at the End of Training",
                 )
             )
@@ -290,19 +330,18 @@ def run_pipeline():
             artifacts = {
                 "config": config,
                 "metrics": metrics,
-                # "mean_action_history": mean_action_history.get_all(),
-                # "mean_reward_history": mean_reward_history.get_all(),
                 "trained_agents": makers,
-                "fig_01_distribution": fig_distribution,
-                "fig_02_actions_scatter": fig_actions_scatter,
-                "fig_03_rewards_scatter": fig_rewards_scatter,
-                "fig_04_last_actions_histo2d": fig_actions_histo2d,
-                "fig_05_dispersion_histo2d": fig_dispersion_histo2d,
+                "01_distribution": fig_distribution,
+                "02_actions_scatter": fig_actions_scatter,
+                "03_rewards_scatter": fig_rewards_scatter,
+                "04_last_actions_histo2d": fig_actions_histo2d,
+                "05_first_dispersion_histo2d": fig_first_dispersion_histo2d,
+                "06_last_dispersion_histo2d": fig_last_dispersion_histo2d,
             }
             exp.save_all(artifacts)
 
             plt.close("all")
-            logger.info(f"Experiment successfully saved to: {exp.path}")
+            logger.info(f"Experiment successfully saved to: {exp.path}.")
 
         except Exception as e:
             logger.error("An error occurred during execution.")
@@ -312,4 +351,33 @@ def run_pipeline():
 
 
 if __name__ == "__main__":
-    run_pipeline()
+    parser = argparse.ArgumentParser(
+        description="Lama Lab - Market Making Simulation Pipeline"
+    )
+    parser.add_argument(
+        "--results_dir",
+        type=str,
+        default="./results",
+        help="Directory where experiment results will be saved.",
+    )
+    parser.add_argument(
+        "-c",
+        "--config",
+        type=str,
+        default=None,
+        help="Path to a YAML or JSON configuration file with overrides.",
+    )
+    args = parser.parse_args()
+
+    overrides = {}
+    if args.config:
+        try:
+            with open(args.config, "r") as f:
+                overrides = yaml.safe_load(f)
+                if overrides is None:
+                    overrides = {}
+        except Exception as e:
+            print(f"Error reading config file {args.config}: {e}")
+            exit(1)
+
+    run_pipeline(results_dir=args.results_dir, config_override=overrides)
