@@ -8,10 +8,10 @@ import torch
 
 import lama_lab.agents as agents
 import lama_lab.analysis as analysis
+import lama_lab.generators as generators
 import lama_lab.plotting as plotting
+import lama_lab.projectors as projectors
 from lama_lab.envs import MarketMakingEnvironment
-from lama_lab.generators import GaussianMixtureGenerator
-from lama_lab.projectors import MarketMakingProjector
 from lama_lab.utils import ResultsManager, RingBuffer, deep_update, setup_logger
 
 # Disable interactive plotting mode to optimize memory usage
@@ -21,7 +21,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 torch.set_default_device(device)
 
 
-def run_pipeline(results_dir="./results", config_override=None):
+def run_pipeline(results_dir: str = "./results", config_override: dict = None):
     manager = ResultsManager(results_dir)
     exp_name = config_override.get("experiment_name", None) if config_override else None
 
@@ -39,26 +39,38 @@ def run_pipeline(results_dir="./results", config_override=None):
             # Configuration
             # -------------------------------------------------------------------------
             default_config = {
-                "n_makers": 2,
-                "n_episodes": 100,
-                "n_rounds": 10_000,
-                "epsilon": 0.001,
+                "env": {
+                    "n_makers": 2,
+                    "n_episodes": 100,
+                    "n_rounds": 50_000,
+                    "epsilon": 0.001,
+                },
                 "generator": {
+                    "type": "GaussianMixtureGenerator",
                     "weights": [0.0, 1.0, 0.0],
                     "means": [0.15, 0.5, 0.85],
                     "stds": [0.03, 0.10, 0.03],
-                    "clamp_min": 0.0,
-                    "clamp_max": 1.0,
+                    "low": 0.0,
+                    "high": 1.0,
+                },
+                "projector": {
+                    "type": "MarketMakingProjector",
+                    "low": 0.0,
+                    "high": 1.0,
+                    "epsilon": 0.001,
                 },
                 "agent": {
                     "type": "AgentPZOMD",
-                    "init_x": [0.25, 0.75],
+                    "init_x": [0.0, 1.0],
                     "eta_0": 0.05,
-                    "delta_0": 1.0,
+                    "delta_0": 0.5,
                     "min_eta": 0.001,
                     "min_delta": 0.001,
+                    "decay_eta": 0.75,
+                    "decay_delta": 0.25,
+                    "max_grad_norm": 5.0,
                 },
-                "n_samples": 2**15,
+                "n_samples": 2**20,
                 "history_window": 10,
             }
 
@@ -66,37 +78,53 @@ def run_pipeline(results_dir="./results", config_override=None):
             if config_override:
                 config = deep_update(default_config, config_override)
 
+            window = config["history_window"]
+            n_makers = config["env"]["n_makers"]
+            n_rounds = config["env"]["n_rounds"]
+            n_episodes = config["env"]["n_episodes"]
+
             logger.info(
                 f"Final Configuration:\n{yaml.dump(config).removesuffix('\n')}."
             )
-            logger.info("Setting up environment, generators, and agents.")
 
             # -------------------------------------------------------------------------
             # Environment & Agents Initialization
             # -------------------------------------------------------------------------
-            generator = GaussianMixtureGenerator(
-                weights=torch.tensor(config["generator"]["weights"]),
-                means=torch.tensor(config["generator"]["means"]),
-                stds=torch.tensor(config["generator"]["stds"]),
-                clamp_min=config["generator"]["clamp_min"],
-                clamp_max=config["generator"]["clamp_max"],
-            )
+            logger.info("Setting up environment, generators, projectors, and agents.")
 
-            env = MarketMakingEnvironment(
-                n_makers=config["n_makers"],
-                n_episodes=config["n_episodes"],
-                n_rounds=config["n_rounds"],
-                generator_v=generator,
-                epsilon=config["epsilon"],
-            )
+            # Generator
+            generator_config: dict = copy.deepcopy(config["generator"])
+            gen_type = generator_config.pop("type")
 
-            projector = MarketMakingProjector(
-                low=0.0,
-                high=1.0,
-                epsilon=config["epsilon"],
-            )
+            if hasattr(generators, gen_type):
+                GeneratorClass = getattr(generators, gen_type)
+                generator: generators.BaseGenerator = GeneratorClass(**generator_config)
+            else:
+                raise ValueError(
+                    f"Generator class '{gen_type}' not found in lama_lab.generators."
+                )
 
-            agent_config = copy.deepcopy(config["agent"])
+            # Environment
+            env_config: dict = copy.deepcopy(config["env"])
+            env = MarketMakingEnvironment(generator_v=generator, **env_config)
+
+            # Projector (if any)
+            projector_config: dict = copy.deepcopy(config.get("projector"))
+            projector = None
+
+            if projector_config:
+                proj_type = projector_config.pop("type")
+
+                if hasattr(projectors, proj_type):
+                    ProjClass = getattr(projectors, proj_type)
+                    projector = ProjClass(**projector_config)
+                else:
+                    raise ValueError(
+                        f"Projector class '{proj_type}' not found in lama_lab.projectors."
+                    )
+
+            # Market makers
+            agent_config: dict = copy.deepcopy(config["agent"])
             agent_type = agent_config.pop("type")
 
             if hasattr(agents, agent_type):
@@ -106,16 +134,20 @@ def run_pipeline(results_dir="./results", config_override=None):
                     f"Agent class '{agent_type}' not found in lama_lab.agents."
                 )
 
-            makers: list[agents.BaseAgent] = [
-                AgentClass(
-                    n_episodes=config["n_episodes"],
-                    project_fn=projector,
-                    name=f"Maker {i}",
+            makers: list[agents.BaseAgent] = []
+            for i in range(n_makers):
+                agent_kwargs = {
+                    "n_episodes": n_episodes,
+                    "name": f"Maker {i}",
                     **agent_config,
-                )
-                for i in range(config["n_makers"])
-            ]
+                }
 
+                if projector is not None:
+                    agent_kwargs["project_fn"] = projector
+
+                makers.append(AgentClass(**agent_kwargs))
+
+            # Generate samples to study distribution
             samples = generator.generate(config["n_samples"])
             fixed_points = analysis.distributions.get_all_unique_fixed_points(
                 initial_x_values=[i / 10 for i in range(1, 10)],
@@ -125,11 +157,6 @@ def run_pipeline(results_dir="./results", config_override=None):
             # -------------------------------------------------------------------------
             # Buffers
             # -------------------------------------------------------------------------
-            n_makers = config["n_makers"]
-            n_rounds = config["n_rounds"]
-            n_episodes = config["n_episodes"]
-            window = config["history_window"]
-
             action_history = {
                 "mean": RingBuffer(n_rounds, shape=(n_makers, 2), device="cpu"),
                 "min": RingBuffer(n_rounds, shape=(n_makers, 2), device="cpu"),
@@ -190,88 +217,92 @@ def run_pipeline(results_dir="./results", config_override=None):
             logger.info("Simulation completed successfully.")
 
             # -------------------------------------------------------------------------
+            # Data Extraction
+            # -------------------------------------------------------------------------
+            logger.info("Extracting data from buffers into tensors.")
+
+            actions_data = {k: v.get_all() for k, v in action_history.items()}
+            rewards_data = {k: v.get_all() for k, v in reward_history.items()}
+
+            # -------------------------------------------------------------------------
             # Analysis & Metrics Computation
             # -------------------------------------------------------------------------
             logger.info("Computing analysis metrics.")
 
             expected_spread = fixed_points[:, 2] - fixed_points[:, 0]
 
-            # shape: (n_rounds, n_makers, 2)
-            action_means_all = action_history["mean"].get_all()
-            action_stds_all = action_history["std"].get_all()
+            # shape: (history_window * n_episodes, n_makers, 2)
+            first_actions_reshaped = actions_data["first"].reshape(-1, n_makers, 2)
+            last_actions_reshaped = actions_data["last"].reshape(-1, n_makers, 2)
 
-            # shape: (n_rounds, n_makers)
-            reward_means_all = reward_history["mean"].get_all()
-            reward_stds_all = reward_history["std"].get_all()
-
-            # shape: (history_window, n_episodes, n_makers, 2)
-            first_actions = action_history["first"].get_all()
-            last_actions = action_history["last"].get_all()
-
-            # shape: (history_window, n_episodes, n_makers)
-            first_rewards = reward_history["first"].get_all()
-            last_rewards = reward_history["last"].get_all()
-
-            first_actions_reshaped = first_actions.reshape(-1, n_makers, 2)
             first_actions_dispersion = analysis.actions.compute_action_dispersion(
                 first_actions_reshaped,
                 reduce_action_dim=False,
             )
-
-            last_actions_reshaped = last_actions.reshape(-1, n_makers, 2)
             last_actions_dispersion = analysis.actions.compute_action_dispersion(
                 last_actions_reshaped,
                 reduce_action_dim=False,
             )
 
-            # Aggregate calculations per agent, preserving the n_makers dimension.
-            # shape: (n_makers, 2)
-            agent_mean_actions = action_means_all.mean(dim=0)
-            agent_std_actions = action_stds_all.mean(dim=0)
+            # Per-agent metrics
+            # Actions: shape (n_makers, 2)
+            agent_mean_actions = actions_data["mean"].mean(dim=0)
+            agent_std_actions = actions_data["std"].mean(dim=0)
+            agent_first_actions = actions_data["first"].mean(dim=(0, 1))
+            agent_last_actions = actions_data["last"].mean(dim=(0, 1))
 
-            # shape: (n_makers,)
-            agent_spreads = agent_mean_actions[:, 1] - agent_mean_actions[:, 0]
+            # Spreads (Ask - Bid): shape (n_makers,)
+            agent_spread_overall = agent_mean_actions[:, 1] - agent_mean_actions[:, 0]
+            agent_spread_first = agent_first_actions[:, 1] - agent_first_actions[:, 0]
+            agent_spread_last = agent_last_actions[:, 1] - agent_last_actions[:, 0]
 
-            # shape: (n_makers,)
-            agent_mean_rewards = reward_means_all.mean(dim=0)
-            agent_std_rewards = reward_stds_all.mean(dim=0)
-
-            # shape: (n_makers, 2)
-            agent_first_actions = first_actions.mean(dim=(0, 1))
-            agent_last_actions = last_actions.mean(dim=(0, 1))
-
-            # shape: (n_makers,)
-            agent_first_rewards = first_rewards.mean(dim=(0, 1))
-            agent_last_rewards = last_rewards.mean(dim=(0, 1))
+            # Rewards: shape (n_makers,)
+            agent_mean_rewards = rewards_data["mean"].mean(dim=0)
+            agent_std_rewards = rewards_data["std"].mean(dim=0)
+            agent_first_rewards = rewards_data["first"].mean(dim=(0, 1))
+            agent_last_rewards = rewards_data["last"].mean(dim=(0, 1))
 
             metrics = {
                 "fixed_points": {
                     "vals": fixed_points[:, [0, 2]].tolist(),
-                    "spread": expected_spread.tolist(),
+                    "expected_spread": expected_spread.tolist(),
                 },
                 "global": {
                     "actions": {
-                        "mean": action_means_all.mean(dim=(0, 1)).tolist(),
-                        "std": action_stds_all.mean(dim=(0, 1)).tolist(),
-                        "first_window_mean": first_actions.mean(dim=(0, 1, 2)).tolist(),
-                        "last_window_mean": last_actions.mean(dim=(0, 1, 2)).tolist(),
-                        "fist_window_dispersion": first_actions_dispersion.mean().item(),
+                        "mean": actions_data["mean"].mean(dim=(0, 1)).tolist(),
+                        "std": actions_data["std"].mean(dim=(0, 1)).tolist(),
+                        "first_window_mean": actions_data["first"]
+                        .mean(dim=(0, 1, 2))
+                        .tolist(),
+                        "last_window_mean": actions_data["last"]
+                        .mean(dim=(0, 1, 2))
+                        .tolist(),
+                        "first_window_dispersion": first_actions_dispersion.mean().item(),
                         "last_window_dispersion": last_actions_dispersion.mean().item(),
                     },
+                    "spread": {
+                        "overall": agent_spread_overall.mean().item(),
+                        "first_window": agent_spread_first.mean().item(),
+                        "last_window": agent_spread_last.mean().item(),
+                    },
                     "rewards": {
-                        "mean": reward_means_all.mean().item(),
-                        "std": reward_stds_all.mean().item(),
-                        "first_window_mean": first_rewards.mean().item(),
-                        "last_window_mean": last_rewards.mean().item(),
+                        "mean": rewards_data["mean"].mean().item(),
+                        "std": rewards_data["std"].mean().item(),
+                        "first_window_mean": rewards_data["first"].mean().item(),
+                        "last_window_mean": rewards_data["last"].mean().item(),
                     },
                 },
                 "per_agent": {
                     "actions": {
                         "mean": agent_mean_actions.tolist(),
                         "std": agent_std_actions.tolist(),
-                        "spread": agent_spreads.tolist(),
                         "first_window_mean": agent_first_actions.tolist(),
                         "last_window_mean": agent_last_actions.tolist(),
+                    },
+                    "spread": {
+                        "overall": agent_spread_overall.tolist(),
+                        "first_window": agent_spread_first.tolist(),
+                        "last_window": agent_spread_last.tolist(),
                     },
                     "rewards": {
                         "mean": agent_mean_rewards.tolist(),
@@ -292,22 +323,31 @@ def run_pipeline(results_dir="./results", config_override=None):
                 samples.cpu(), fixed_points
             )
             fig_actions_scatter = plotting.actions.plot_market_makers_actions_scatter(
-                action_history["mean"].get_all(),
-                action_history["min"].get_all(),
-                action_history["max"].get_all(),
-                action_history["std"].get_all(),
+                actions_data["mean"],
+                actions_data["min"],
+                actions_data["max"],
+                actions_data["std"],
                 reference_prices=fixed_points[:, [0, 2]],
             )
             fig_rewards_scatter = plotting.rewards.plot_rewards_scatter(
-                reward_history["mean"].get_all(),
-                reward_history["min"].get_all(),
-                reward_history["max"].get_all(),
-                reward_history["std"].get_all(),
+                rewards_data["mean"],
+                rewards_data["min"],
+                rewards_data["max"],
+                rewards_data["std"],
             )
-            fig_actions_histo2d = plotting.actions.plot_market_makers_actions_histo2d(
-                last_actions_reshaped,
-                title="Bid/Ask Actions at the End of Training",
-                reference_prices=fixed_points[:, [0, 2]],
+            fig_first_actions_histo2d = (
+                plotting.actions.plot_market_makers_actions_histo2d(
+                    first_actions_reshaped,
+                    title="Bid/Ask Actions at the Beginning of Training",
+                    reference_prices=fixed_points[:, [0, 2]],
+                )
+            )
+            fig_last_actions_histo2d = (
+                plotting.actions.plot_market_makers_actions_histo2d(
+                    last_actions_reshaped,
+                    title="Bid/Ask Actions at the End of Training",
+                    reference_prices=fixed_points[:, [0, 2]],
+                )
             )
             fig_first_dispersion_histo2d = plotting.actions.plot_market_makers_actions_dispersion_histo2d(
                 first_actions_dispersion,
@@ -334,9 +374,10 @@ def run_pipeline(results_dir="./results", config_override=None):
                 "01_distribution": fig_distribution,
                 "02_actions_scatter": fig_actions_scatter,
                 "03_rewards_scatter": fig_rewards_scatter,
-                "04_last_actions_histo2d": fig_actions_histo2d,
-                "05_first_dispersion_histo2d": fig_first_dispersion_histo2d,
-                "06_last_dispersion_histo2d": fig_last_dispersion_histo2d,
+                "04_first_actions_histo2d": fig_first_actions_histo2d,
+                "05_last_actions_histo2d": fig_last_actions_histo2d,
+                "06_first_dispersion_histo2d": fig_first_dispersion_histo2d,
+                "07_last_dispersion_histo2d": fig_last_dispersion_histo2d,
             }
             exp.save_all(artifacts)
 
@@ -377,7 +418,7 @@ if __name__ == "__main__":
                 if overrides is None:
                     overrides = {}
         except Exception as e:
-            print(f"Error reading config file {args.config}: {e}")
+            print(f"Error reading config file {args.config}: {e}.")
             exit(1)
 
     run_pipeline(results_dir=args.results_dir, config_override=overrides)

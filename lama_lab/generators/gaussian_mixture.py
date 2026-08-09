@@ -8,31 +8,31 @@ class GaussianMixtureGenerator(BaseGenerator):
 
     Parameters
     ----------
-    weights : torch.Tensor
+    weights : list of float
         Non-negative mixing weights for each component.
-    means : torch.Tensor
+    means : list of float
         Mean vector for each Gaussian component.
-    stds : torch.Tensor
+    stds : list of float
         Standard deviation vector for each Gaussian component.
-    clamp_min : float
+    low : float
         Lower bound used to clamp generated values.
-    clamp_max : float
+    high : float
         Upper bound used to clamp generated values.
     """
 
     def __init__(
         self,
-        weights: torch.Tensor,
-        means: torch.Tensor,
-        stds: torch.Tensor,
-        clamp_min: float,
-        clamp_max: float,
+        weights: list[float],
+        means: list[float],
+        stds: list[float],
+        low: float,
+        high: float,
     ):
-        self.weights = weights
-        self.means = means
-        self.stds = stds
-        self.clamp_min = clamp_min
-        self.clamp_max = clamp_max
+        self.weights = torch.as_tensor(weights)
+        self.means = torch.as_tensor(means)
+        self.stds = torch.as_tensor(stds)
+        self.low = low
+        self.high = high
         return
 
     def generate(self, n_samples: int) -> torch.Tensor:
@@ -42,4 +42,4 @@ class GaussianMixtureGenerator(BaseGenerator):
         selected_means = self.means[sampled_indices]
         selected_stds = self.stds[sampled_indices]
         samples = torch.normal(selected_means, selected_stds)
-        return torch.clamp(samples, min=self.clamp_min, max=self.clamp_max)
+        return torch.clamp(samples, min=self.low, max=self.high)
