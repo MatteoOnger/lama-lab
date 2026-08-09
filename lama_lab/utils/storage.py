@@ -78,27 +78,26 @@ class ExperimentManager:
         return self.path / filename
 
     def load_all(self) -> dict[str, Any]:
-        """Load all recognized files from the experiment directory into a dictionary.
+        """Load all recognized files and subdirectories from the experiment directory.
 
-        Files are loaded automatically based on their extension. Unrecognized
-        extensions are silently ignored.
+        Files are loaded automatically based on their extension. Subdirectories
+        are loaded recursively. Unrecognized extensions are silently ignored.
 
         Returns
         -------
         artifacts : dict of str to Any
-            Dictionary mapping full file names (including extensions) to their
-            loaded Python objects.
+            Dictionary mapping file/directory names to their loaded Python objects.
         """
         artifacts = {}
-        for file_path in self.path.iterdir():
-            if not file_path.is_file():
-                continue
-
-            ext = file_path.suffix.lower()
-
-            if ext in self._load_dispatch:
-                load_func = self._load_dispatch[ext]
-                artifacts[file_path.name] = load_func(file_path.name)
+        for item_path in self.path.iterdir():
+            if item_path.is_dir():
+                sub_manager = ExperimentManager(item_path)
+                artifacts[item_path.name] = sub_manager.load_all()
+            elif item_path.is_file():
+                ext = item_path.suffix.lower()
+                if ext in self._load_dispatch:
+                    load_func = self._load_dispatch[ext]
+                    artifacts[item_path.name] = load_func(item_path.name)
         return artifacts
 
     def load_json(self, name: str | Path, encoding: str = "utf-8") -> Any:
@@ -214,16 +213,21 @@ class ExperimentManager:
     def save_all(self, artifacts: dict[str, Any]) -> None:
         """Save a dictionary of heterogeneous objects automatically routing them to the correct format.
 
-        Parameters
-        ----------
-        artifacts : dict of str to Any
-            Dictionary where keys are file names (or base names) and values are
-            the objects to save. The correct saving method is automatically inferred
-            from the object's type.
+        If a value is a dictionary containing complex objects (like Tensors), a
+        subdirectory is created and its contents are saved recursively.
         """
         for name, obj in artifacts.items():
-            saved = False
+            if isinstance(obj, dict):
+                try:
+                    json.dumps(obj)
+                    self.save_json(name, obj)
+                    continue
+                except TypeError:
+                    sub_manager = ExperimentManager(self.path / name)
+                    sub_manager.save_all(obj)
+                    continue
 
+            saved = False
             for obj_type, save_func in self._save_dispatch.items():
                 if isinstance(obj, obj_type):
                     save_func(name, obj)
