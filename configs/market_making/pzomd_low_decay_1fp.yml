@@ -1,5 +1,5 @@
 agent:
-  decay_delta: 0.20
+  decay_delta: 0.25
   decay_eta: 0.75
   delta_0: 0.5
   eta_0: 0.05
@@ -12,9 +12,9 @@ agent:
   type: AgentPZOMD
 env:
   epsilon: 0.001
-  n_episodes: 10
+  n_episodes: 100000
   n_makers: 2
-  n_rounds: 50000
+  n_rounds: 100000
 experiment_name: pzomd_low_decay_1fp
 generator:
   high: 1.0
@@ -33,7 +33,7 @@ generator:
   - 1.0
   - 0.0
 history_window: 1
-n_samples: 1000000
+n_samples: 32000000
 projector:
   epsilon: 0.001
   high: 1.0
