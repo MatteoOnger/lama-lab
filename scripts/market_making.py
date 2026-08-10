@@ -83,14 +83,12 @@ def run_pipeline(results_dir: str = "./results", config_override: dict = None):
             n_rounds = config["env"]["n_rounds"]
             n_episodes = config["env"]["n_episodes"]
 
-            logger.info(
-                f"Final Configuration:\n{yaml.dump(config).removesuffix('\n')}."
-            )
+            logger.info(f"Final Configuration:\n{yaml.dump(config).removesuffix('\n')}")
 
             # -------------------------------------------------------------------------
             # Environment & Agents Initialization
             # -------------------------------------------------------------------------
-            logger.info("Setting up environment, generators, projectors, and agents.")
+            logger.info("Setting up environment, generators, projectors and agents.")
 
             # Generator
             generator_config: dict = copy.deepcopy(config["generator"])
@@ -371,6 +369,8 @@ def run_pipeline(results_dir: str = "./results", config_override: dict = None):
                 "config": config,
                 "metrics": metrics,
                 "trained_agents": makers,
+                "actions": actions_data,
+                "rewards": rewards_data,
                 "01_distribution": fig_distribution,
                 "02_actions_scatter": fig_actions_scatter,
                 "03_rewards_scatter": fig_rewards_scatter,
