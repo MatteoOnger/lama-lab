@@ -367,6 +367,6 @@ def plot_market_makers_actions_scatter(
         unique_labels.keys(),
         loc="lower center",
         bbox_to_anchor=(0.5, 0),
-        ncol=len(unique_labels),
+        ncol=4 if reference_prices is None else 5,
     )
     return fig

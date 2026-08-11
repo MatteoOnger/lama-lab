@@ -21,14 +21,14 @@ class AgentPZOMD(BaseAgent):
         Initial action used to initialize the optimization process in each episode.
     project_fn : Callable[[torch.Tensor], torch.Tensor], optional
         Projection function applied after perturbation and update steps.
-    eta_0 : float, optional
-        Initial learning rate.
     delta_0 : float, optional
         Initial perturbation radius.
-    decay_eta : float, optional
-        Exponent for the learning rate decay schedule (t^-decay_eta).
+    eta_0 : float, optional
+        Initial learning rate.
     decay_delta : float, optional
         Exponent for the perturbation radius decay schedule (t^-decay_delta).
+    decay_eta : float, optional
+            Exponent for the learning rate decay schedule (t^-decay_eta).
     min_delta : float, optional
         Minimum allowed perturbation radius.
     min_eta : float, optional
@@ -65,11 +65,11 @@ class AgentPZOMD(BaseAgent):
         n_episodes: int,
         init_x: torch.Tensor | list[float],
         project_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
-        eta_0: float = 0.05,
-        delta_0: float = 0.01,
-        decay_eta: float = 0.75,
+        delta_0: float = 0.5,
+        eta_0: float = 0.1,
         decay_delta: float = 0.25,
-        min_delta: float = 0.005,
+        decay_eta: float = 0.75,
+        min_delta: float = 0.001,
         min_eta: float = 0.001,
         max_grad_norm: float = 5.0,
         name: str = "AgentPZOMD",

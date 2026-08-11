@@ -42,7 +42,7 @@ def run_pipeline(results_dir: str = "./results", config_override: dict = None):
                 "env": {
                     "n_makers": 2,
                     "n_episodes": 100,
-                    "n_rounds": 50_000,
+                    "n_rounds": 100_000,
                     "epsilon": 0.001,
                 },
                 "generator": {
@@ -62,15 +62,15 @@ def run_pipeline(results_dir: str = "./results", config_override: dict = None):
                 "agent": {
                     "type": "AgentPZOMD",
                     "init_x": [0.0, 1.0],
-                    "eta_0": 0.05,
                     "delta_0": 0.5,
-                    "min_eta": 0.001,
-                    "min_delta": 0.001,
-                    "decay_eta": 0.75,
+                    "eta_0": 0.1,
                     "decay_delta": 0.25,
+                    "decay_eta": 0.75,
+                    "min_delta": 0.001,
+                    "min_eta": 0.001,
                     "max_grad_norm": 5.0,
                 },
-                "n_samples": 2**20,
+                "n_samples": 1000000,
                 "history_window": 10,
             }
 

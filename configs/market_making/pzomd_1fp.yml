@@ -1,0 +1,5 @@
+experiment_name: pzomd_1fp
+env:
+  n_episodes: 100000
+n_samples: 32000000
+history_window: 1
