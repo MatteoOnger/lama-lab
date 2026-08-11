@@ -2,89 +2,127 @@ import torch
 
 
 def get_all_unique_fixed_points(
-    initial_x_values: list[float],
     samples: torch.Tensor,
-    max_iter: int = 1000,
+    grid_size: int = 5000,
     eps: float = 1e-4,
     tol: float = 1e-6,
 ) -> torch.Tensor:
-    """Find unique fixed points of a distribution.
+    r"""Find all unique fixed points (both stable and unstable) of a distribution.
 
-    In this context, given the underlying distribution represented by the
-    provided ``samples``, we define a "fixed point" $x^*$ as a value that
-    satisfies the following equilibrium condition:
+    Given an empirical distribution represented by 1D ``samples``, a fixed point
+    $x^*$ satisfies the equilibrium condition:
 
-    $$x^* = \\frac{1}{2} ( \\mu_{lower}(x^*) + \\mu_{upper}(x^*) )$$
+        $$x^* = \frac{1}{2} \left( \mu_{lower}(x^*) + \mu_{upper}(x^*) \right)$$
 
-    where $\\mu_{lower}(x^*)$ is the conditional mean of the distribution for
-    values strictly less than $x^*$, and $\\mu_{upper}(x^*)$ is the conditional
-    mean for values greater than or equal to $x^*$, both estimated from the samples.
+    where $\mu_{lower}(x^*)$ is the conditional mean of samples strictly less than
+    $x^*$, and $\mu_{upper}(x^*)$ is the conditional mean of samples greater than
+    or equal to $x^*$.
 
-    Starting from multiple initial values, the function iteratively updates each
-    value using the formula above. Convergence is reached when the updated value
-    differs from the current one by less than ``tol``. Converged solutions are
-    collected and filtered to keep only those separated by at least ``eps``.
+    This function evaluates $g(x) = \frac{1}{2}(\mu_{lower}(x) + \mu_{upper}(x)) - x$
+    over a grid, identifies zero-crossings, and validates candidates against exact
+    conditional means to filter interpolation artifacts.
 
     Parameters
     ----------
-    initial_x_values : list of float
-        Initial values from which to start the iteration.
     samples : torch.Tensor
-        One-dimensional tensor containing the samples drawn from the target
-        distribution, used to compute the lower and upper conditional means.
-    max_iter : int, optional
-        Maximum number of iterations for each initial value.
+        One-dimensional tensor containing samples drawn from the target distribution.
+    grid_size : int, optional
+        Number of evaluation points in the search grid.
     eps : float, optional
-        Tolerance used to identify and separate distinct fixed points.
+        Minimum separation distance required to consider two fixed points distinct.
     tol : float, optional
-        Convergence tolerance for the fixed-point update.
+        Maximum allowable deviation between a candidate root and its evaluated
+        fixed-point condition for validation.
 
     Returns
     -------
     out : torch.Tensor
-        Tensor of shape ``(n_fixed_points, 3)`` containing, for each unique
-        fixed point, the lower mean, the fixed point value, and the upper mean.
-        Rows are sorted in ascending order by the fixed-point value.
+        Tensor of shape ``(n_fixed_points, 3)`` containing, for each validated
+        unique fixed point, the lower mean $\mu_{lower}$, the fixed point $x^*$,
+        and the upper mean $\mu_{upper}$. Rows are sorted in ascending order by $x^*$.
 
     Raises
     ------
     ValueError
-        If no unique fixed points are found.
+        If no valid unique fixed points are found within the sample range.
     """
-    unique_b = []
-    unique_x = []
-    unique_a = []
+    # Sort samples and define grid boundaries over the sample range
+    samples_sorted = torch.sort(samples.flatten()).values
+    n_samples = len(samples_sorted)
 
-    for x_init in initial_x_values:
-        x = torch.as_tensor(x_init, dtype=samples.dtype, device=samples.device)
+    x_min, x_max = samples_sorted[0].item(), samples_sorted[-1].item()
+    x_grid = torch.linspace(x_min, x_max, steps=grid_size, device=samples.device)
 
-        for _ in range(max_iter):
-            lower = samples[samples < x]
-            upper = samples[samples >= x]
+    # Precompute prefix sums for O(1) conditional mean evaluation
+    cum_sums = torch.cat(
+        [
+            torch.zeros(1, dtype=samples.dtype, device=samples.device),
+            torch.cumsum(samples_sorted, dim=0),
+        ]
+    )
 
-            mbtx = lower.mean() if lower.numel() > 0 else x
-            matx = upper.mean() if upper.numel() > 0 else x
+    # Find sample split indices for every grid point using binary search
+    idx = torch.searchsorted(samples_sorted, x_grid)
 
-            new_x = (mbtx + matx) / 2.0
+    # Compute vectorized conditional lower means: E[S | S < x]
+    lower_counts = idx.to(samples.dtype)
+    safe_lower_counts = lower_counts.clamp(min=1)  # Prevent division by zero
+    lower_sums = cum_sums[idx]
+    mbtx = torch.where(lower_counts > 0, lower_sums / safe_lower_counts, x_grid)
 
-            if torch.abs(new_x - x) < tol:
-                if not any(torch.abs(new_x - u) < eps for u in unique_x):
-                    unique_b.append(mbtx.cpu())
-                    unique_x.append(new_x.cpu())
-                    unique_a.append(matx.cpu())
-                break
+    # Compute vectorized conditional upper means: E[S | S >= x]
+    upper_counts = (n_samples - idx).to(samples.dtype)
+    safe_upper_counts = upper_counts.clamp(min=1)  # Prevent division by zero
+    upper_sums = cum_sums[-1] - cum_sums[idx]
+    matx = torch.where(upper_counts > 0, upper_sums / safe_upper_counts, x_grid)
 
-            x = new_x
+    # Evaluate residual function g(x) = f(x) - x, where roots satisfy g(x*) = 0
+    f_x = (mbtx + matx) / 2.0
+    g_x = f_x - x_grid
 
-    if not unique_x:
+    # Detect zero-crossings
+    signs = torch.sign(g_x)
+    sign_diffs = signs[1:] - signs[:-1]
+    crossing_indices = torch.where(sign_diffs != 0)[0]
+
+    if len(crossing_indices) == 0:
         raise ValueError("No unique fixed points found.")
 
-    result = torch.stack(
-        (
-            torch.stack(unique_b),
-            torch.stack(unique_x),
-            torch.stack(unique_a),
-        ),
-        dim=1,
-    )
+    unique_points = []
+    for i in crossing_indices:
+        # Interpolate linearly between grid points to estimate candidate root
+        x0, x1 = x_grid[i], x_grid[i + 1]
+        y0, y1 = g_x[i], g_x[i + 1]
+
+        if y1 == y0:
+            root = x0
+        else:
+            root = x0 - y0 * (x1 - x0) / (y1 - y0)
+
+        # Ensure uniqueness by keeping candidates separated by at least eps
+        if not unique_points or all(
+            torch.abs(root - u[1]) >= eps for u in unique_points
+        ):
+            # Compute exact conditional means at candidate root scalar
+            root_scalar = root.item()
+            lower = samples[samples < root_scalar]
+            upper = samples[samples >= root_scalar]
+
+            root_mbtx = lower.mean() if lower.numel() > 0 else root
+            root_matx = upper.mean() if upper.numel() > 0 else root
+
+            # Validate fixed-point condition to discard phantom step-function roots
+            expected_root = (root_mbtx + root_matx) / 2.0
+            if torch.abs(expected_root - root) > tol:
+                continue
+
+            unique_points.append(torch.stack([root_mbtx, root, root_matx]))
+
+    if not unique_points:
+        raise ValueError(
+            "No valid unique fixed points found after validation filtering."
+        )
+
+    # Stack validated roots and return sorted by fixed point value
+    result = torch.stack(unique_points)
     return result[result[:, 1].argsort()]
