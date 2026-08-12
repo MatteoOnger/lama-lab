@@ -140,5 +140,5 @@ def get_nash_market_making(
                 a_star,
             )
 
-        valid_nash = fixed_points[nash_mask]
+    valid_nash = fixed_points[nash_mask]
     return valid_nash
