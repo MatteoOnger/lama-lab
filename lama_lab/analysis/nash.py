@@ -10,7 +10,6 @@ def get_nash_market_making(
     fixed_points: torch.Tensor,
     grid_size: int = 5000,
     tol: float = 1e-4,
-    verbose: bool = False,
 ) -> torch.Tensor:
     r"""Filter fixed points to retain only true Nash Equilibria.
 
@@ -35,9 +34,6 @@ def get_nash_market_making(
     tol : float, optional
         Numerical tolerance. A deviation is considered profitable only if the
         expected profit strictly exceeds ``tol``.
-    verbose : bool, optional
-        If True, prints detailed information whenever a candidate fixed point is
-        invalidated by a profitable deviation. Default is True.
 
     Returns
     -------
