@@ -14,6 +14,10 @@ import lama_lab.projectors as projectors
 from lama_lab.envs import MarketMakingEnvironment
 from lama_lab.utils import ResultsManager, RingBuffer, deep_update, setup_logger
 
+# Numerical stability parameters
+EPS = 1e-03
+TOL = 1e-03
+
 # Disable interactive plotting mode to optimize memory usage
 plt.ioff()
 
@@ -148,8 +152,8 @@ def run_pipeline(results_dir: str = "./results", config_override: dict = None):
             # Generate samples to study distribution
             samples = generator.generate(config["n_samples"])
             fixed_points = analysis.distributions.get_all_unique_fixed_points(
-                samples=samples,
-            )
+                samples=samples, eps=EPS, tol=TOL
+            ).cpu()
 
             # -------------------------------------------------------------------------
             # Buffers

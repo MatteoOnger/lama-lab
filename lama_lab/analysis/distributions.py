@@ -7,7 +7,7 @@ def get_all_unique_fixed_points(
     eps: float = 1e-3,
     tol: float = 1e-3,
 ) -> torch.Tensor:
-    """Find all unique fixed points (both stable and unstable) of a distribution.
+    r"""Find all unique fixed points (both stable and unstable) of a distribution.
 
     Given an empirical distribution represented by 1D ``samples``, a fixed point
     $x^*$ satisfies the equilibrium condition:
