@@ -154,6 +154,9 @@ def run_pipeline(results_dir: str = "./results", config_override: dict = None):
             fixed_points = analysis.distributions.get_all_unique_fixed_points(
                 samples=samples, eps=EPS, tol=TOL
             ).cpu()
+            nash_points = analysis.nash.get_nash_market_making(
+                samples=samples, fixed_points=fixed_points, tol=TOL
+            )
 
             # -------------------------------------------------------------------------
             # Buffers
@@ -267,6 +270,9 @@ def run_pipeline(results_dir: str = "./results", config_override: dict = None):
                 "fixed_points": {
                     "vals": fixed_points[:, [0, 2]].tolist(),
                     "expected_spread": expected_spread.tolist(),
+                },
+                "nash_points": {
+                    "vals": nash_points[:, [0, 2]].tolist(),
                 },
                 "global": {
                     "actions": {
