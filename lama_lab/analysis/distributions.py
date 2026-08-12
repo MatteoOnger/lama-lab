@@ -4,10 +4,10 @@ import torch
 def get_all_unique_fixed_points(
     samples: torch.Tensor,
     grid_size: int = 5000,
-    eps: float = 1e-4,
-    tol: float = 1e-6,
+    eps: float = 1e-3,
+    tol: float = 1e-3,
 ) -> torch.Tensor:
-    r"""Find all unique fixed points (both stable and unstable) of a distribution.
+    """Find all unique fixed points (both stable and unstable) of a distribution.
 
     Given an empirical distribution represented by 1D ``samples``, a fixed point
     $x^*$ satisfies the equilibrium condition:

@@ -148,7 +148,6 @@ def run_pipeline(results_dir: str = "./results", config_override: dict = None):
             # Generate samples to study distribution
             samples = generator.generate(config["n_samples"])
             fixed_points = analysis.distributions.get_all_unique_fixed_points(
-                initial_x_values=[i / 10 for i in range(1, 10)],
                 samples=samples,
             )
 
