@@ -359,7 +359,7 @@ def run_pipeline(results_dir: str = "./results", config_override: dict = None):
                 rewards_data["min"],
                 rewards_data["max"],
                 rewards_data["std"],
-                reference_values=torch.tensor([0]),
+                reference_values=torch.tensor([0], device="cpu"),
                 agent_names=[maker.name for maker in makers],
                 feature_names=["Reward"],
                 feature_colors=["tab:green"],

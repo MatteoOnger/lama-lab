@@ -97,7 +97,7 @@ class ExperimentManager:
                 ext = item_path.suffix.lower()
                 if ext in self._load_dispatch:
                     load_func = self._load_dispatch[ext]
-                    artifacts[item_path.name] = load_func(item_path.name)
+                    artifacts[item_path.stem] = load_func(item_path.name)
         return artifacts
 
     def load_json(self, name: str | Path, encoding: str = "utf-8") -> Any:
