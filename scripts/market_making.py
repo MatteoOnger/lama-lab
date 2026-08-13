@@ -335,8 +335,8 @@ def run_pipeline(results_dir: str = "./results", config_override: dict = None):
 
             fig_distribution = plotting.plot_1d_histogram(
                 samples.cpu(),
-                # reference_values=fixed_points,
-                # reference_colors=colors,
+                reference_values=fixed_points,
+                reference_colors=colors,
                 title="Distribution of V",
                 xlabel="V",
             )
@@ -349,7 +349,7 @@ def run_pipeline(results_dir: str = "./results", config_override: dict = None):
                 reference_values=fixed_points[:, [0, 2]],
                 agent_names=[maker.name for maker in makers],
                 feature_names=["Bid", "Ask"],
-                # feature_colors=["tab:blue", "tab:orange"],
+                feature_colors=["tab:blue", "tab:orange"],
                 ylabel="Price",
                 title_prefix="Action History",
             )
