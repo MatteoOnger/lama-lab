@@ -156,7 +156,14 @@ def run_pipeline(results_dir: str = "./results", config_override: dict = None):
             ).cpu()
             nash_points = analysis.nash.get_nash_market_making(
                 samples=samples, fixed_points=fixed_points, tol=TOL
-            )
+            ).cpu()
+
+            colors = []
+            for fp in fixed_points:
+                is_nash = torch.any(
+                    torch.all(torch.isclose(fp, nash_points), dim=1)
+                ).item()
+                colors.append("darkred" if is_nash else "tab:blue")
 
             # -------------------------------------------------------------------------
             # Buffers
@@ -326,47 +333,66 @@ def run_pipeline(results_dir: str = "./results", config_override: dict = None):
             # -------------------------------------------------------------------------
             logger.info("Generating figures (headless mode).")
 
-            fig_distribution = plotting.distributions.plot_distribution(
-                samples.cpu(), fixed_points
+            fig_distribution = plotting.plot_1d_histogram(
+                samples.cpu(),
+                # reference_values=fixed_points,
+                # reference_colors=colors,
+                title="Distribution of V",
+                xlabel="V",
             )
-            fig_actions_scatter = plotting.actions.plot_market_makers_actions_scatter(
+            fig_actions_history = plotting.plot_history(
+                2,
                 actions_data["mean"],
                 actions_data["min"],
                 actions_data["max"],
                 actions_data["std"],
-                reference_prices=fixed_points[:, [0, 2]],
+                reference_values=fixed_points[:, [0, 2]],
+                agent_names=[maker.name for maker in makers],
+                feature_names=["Bid", "Ask"],
+                # feature_colors=["tab:blue", "tab:orange"],
+                ylabel="Price",
+                title_prefix="Action History",
             )
-            fig_rewards_scatter = plotting.rewards.plot_rewards_scatter(
+            fig_rewards_history = plotting.plot_history(
+                1,
                 rewards_data["mean"],
                 rewards_data["min"],
                 rewards_data["max"],
                 rewards_data["std"],
+                reference_values=torch.tensor([0]),
+                agent_names=[maker.name for maker in makers],
+                feature_names=["Reward"],
+                feature_colors=["tab:green"],
+                ylabel="Reward",
+                title_prefix="Reward History",
             )
-            fig_first_actions_histo2d = (
-                plotting.actions.plot_market_makers_actions_histo2d(
-                    first_actions_reshaped,
-                    title="Bid/Ask Actions at the Beginning of Training",
-                    reference_prices=fixed_points[:, [0, 2]],
-                )
+            fig_first_actions_histo2d = plotting.plot_2d_histogram(
+                first_actions_reshaped,
+                reference_values=fixed_points[:, [0, 2]],
+                reference_colors=colors,
+                subplot_titles=[maker.name for maker in makers],
+                feature_names=("Bid Price", "Ask Price"),
+                hist_range=[0, 1],
+                title="Bid/Ask Actions at the Beginning of Training",
             )
-            fig_last_actions_histo2d = (
-                plotting.actions.plot_market_makers_actions_histo2d(
-                    last_actions_reshaped,
-                    title="Bid/Ask Actions at the End of Training",
-                    reference_prices=fixed_points[:, [0, 2]],
-                )
+            fig_last_actions_histo2d = plotting.plot_2d_histogram(
+                last_actions_reshaped,
+                reference_values=fixed_points[:, [0, 2]],
+                reference_colors=colors,
+                subplot_titles=[maker.name for maker in makers],
+                feature_names=("Bid Price", "Ask Price"),
+                hist_range=[0, 1],
+                title="Bid/Ask Actions at the End of Training",
             )
-            fig_first_dispersion_histo2d = plotting.actions.plot_market_makers_actions_dispersion_histo2d(
+            fig_first_dispersion_histo2d = plotting.plot_2d_histogram(
                 first_actions_dispersion,
-                hist_range=None,
+                feature_names=("Bid Dispersion", "Ask Dispersion"),
                 title="Market Makers Actions Dispersion at the Beginning of Training",
             )
-            fig_last_dispersion_histo2d = (
-                plotting.actions.plot_market_makers_actions_dispersion_histo2d(
-                    last_actions_dispersion,
-                    hist_range=None,
-                    title="Market Makers Actions Dispersion at the End of Training",
-                )
+            fig_last_dispersion_histo2d = plotting.plot_2d_histogram(
+                last_actions_dispersion,
+                feature_names=("Bid Dispersion", "Ask Dispersion"),
+                title="Market Makers Actions Dispersion at the End of Training",
             )
 
             # -------------------------------------------------------------------------
@@ -381,8 +407,8 @@ def run_pipeline(results_dir: str = "./results", config_override: dict = None):
                 "actions": actions_data,
                 "rewards": rewards_data,
                 "01_distribution": fig_distribution,
-                "02_actions_scatter": fig_actions_scatter,
-                "03_rewards_scatter": fig_rewards_scatter,
+                "02_actions_scatter": fig_actions_history,
+                "03_rewards_scatter": fig_rewards_history,
                 "04_first_actions_histo2d": fig_first_actions_histo2d,
                 "05_last_actions_histo2d": fig_last_actions_histo2d,
                 "06_first_dispersion_histo2d": fig_first_dispersion_histo2d,
