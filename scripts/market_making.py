@@ -6,13 +6,12 @@ import yaml
 import matplotlib.pyplot as plt
 import torch
 
-import lama_lab.agents as agents
 import lama_lab.analysis as analysis
-import lama_lab.generators as generators
 import lama_lab.plotting as plotting
-import lama_lab.projectors as projectors
+from lama_lab.agents import BaseAgent
+from lama_lab.generators import BaseGenerator
 from lama_lab.envs import MarketMakingEnvironment
-from lama_lab.utils import ResultsManager, RingBuffer, deep_update, setup_logger
+from lama_lab.utils import ResultsManager, RingBuffer, build_from_config, setup_logger
 
 # Numerical stability parameters
 EPS = 1e-03
@@ -25,9 +24,9 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 torch.set_default_device(device)
 
 
-def run_pipeline(results_dir: str = "./results", config_override: dict = None):
+def run_pipeline(config: dict, results_dir: str = "./results"):
     manager = ResultsManager(results_dir)
-    exp_name = config_override.get("experiment_name", None) if config_override else None
+    exp_name = config.get("experiment_name", None)
 
     with manager.new_experiment(name=exp_name) as exp:
 
@@ -37,117 +36,42 @@ def run_pipeline(results_dir: str = "./results", config_override: dict = None):
         )
 
         logger.info("Experiment initialized. Starting pipeline.")
+        logger.info(f"Device: {torch.get_default_device()}")
 
         try:
             # -------------------------------------------------------------------------
-            # Configuration
+            # Configuration Setup
             # -------------------------------------------------------------------------
-            default_config = {
-                "env": {
-                    "n_makers": 2,
-                    "n_episodes": 100,
-                    "n_rounds": 100_000,
-                    "epsilon": 0.001,
-                },
-                "generator": {
-                    "type": "GaussianMixtureGenerator",
-                    "weights": [0.0, 1.0, 0.0],
-                    "means": [0.15, 0.5, 0.85],
-                    "stds": [0.03, 0.10, 0.03],
-                    "low": 0.0,
-                    "high": 1.0,
-                },
-                "projector": {
-                    "type": "MarketMakingProjector",
-                    "low": 0.0,
-                    "high": 1.0,
-                    "epsilon": 0.001,
-                },
-                "agent": {
-                    "type": "AgentPZOMD",
-                    "init_x": [0.0, 1.0],
-                    "delta_0": 0.5,
-                    "eta_0": 0.1,
-                    "decay_delta": 0.25,
-                    "decay_eta": 0.75,
-                    "min_delta": 0.001,
-                    "min_eta": 0.001,
-                    "max_grad_norm": 5.0,
-                },
-                "n_samples": 1000000,
-                "history_window": 10,
-            }
-
-            config = default_config
-            if config_override:
-                config = deep_update(default_config, config_override)
-
-            window = config["history_window"]
             n_makers = config["env"]["n_makers"]
             n_rounds = config["env"]["n_rounds"]
             n_episodes = config["env"]["n_episodes"]
+            window = config["history_window"]
 
             logger.info(f"Final Configuration:\n{yaml.dump(config).removesuffix('\n')}")
 
             # -------------------------------------------------------------------------
             # Environment & Agents Initialization
             # -------------------------------------------------------------------------
-            logger.info("Setting up environment, generators, projectors and agents.")
+            logger.info("Building environment, generators, and agents dynamically.")
 
             # Generator
-            generator_config: dict = copy.deepcopy(config["generator"])
-            gen_type = generator_config.pop("type")
-
-            if hasattr(generators, gen_type):
-                GeneratorClass = getattr(generators, gen_type)
-                generator: generators.BaseGenerator = GeneratorClass(**generator_config)
-            else:
-                raise ValueError(
-                    f"Generator class '{gen_type}' not found in lama_lab.generators."
-                )
+            generator: BaseGenerator = build_from_config(config["generator"])
 
             # Environment
-            env_config: dict = copy.deepcopy(config["env"])
-            env = MarketMakingEnvironment(generator_v=generator, **env_config)
+            env_kwargs = copy.deepcopy(config["env"])
+            env = MarketMakingEnvironment(generator_v=generator, **env_kwargs)
 
-            # Projector (if any)
-            projector_config: dict = copy.deepcopy(config.get("projector"))
-            projector = None
+            # Market Makers
+            agent_base_cfg = config["agent"]
+            makers: list[BaseAgent] = []
 
-            if projector_config:
-                proj_type = projector_config.pop("type")
-
-                if hasattr(projectors, proj_type):
-                    ProjClass = getattr(projectors, proj_type)
-                    projector = ProjClass(**projector_config)
-                else:
-                    raise ValueError(
-                        f"Projector class '{proj_type}' not found in lama_lab.projectors."
-                    )
-
-            # Market makers
-            agent_config: dict = copy.deepcopy(config["agent"])
-            agent_type = agent_config.pop("type")
-
-            if hasattr(agents, agent_type):
-                AgentClass = getattr(agents, agent_type)
-            else:
-                raise ValueError(
-                    f"Agent class '{agent_type}' not found in lama_lab.agents."
-                )
-
-            makers: list[agents.BaseAgent] = []
             for i in range(n_makers):
-                agent_kwargs = {
-                    "n_episodes": n_episodes,
-                    "name": f"Maker {i}",
-                    **agent_config,
-                }
+                agent_cfg = copy.deepcopy(agent_base_cfg)
+                agent_cfg["name"] = f"Maker {i}"
+                agent_cfg["n_episodes"] = n_episodes
 
-                if projector is not None:
-                    agent_kwargs["project_fn"] = projector
-
-                makers.append(AgentClass(**agent_kwargs))
+                agent = build_from_config(agent_cfg)
+                makers.append(agent)
 
             # Generate samples to study distribution
             samples = generator.generate(config["n_samples"])
@@ -440,20 +364,18 @@ if __name__ == "__main__":
         "-c",
         "--config",
         type=str,
-        default=None,
-        help="Path to a YAML or JSON configuration file with overrides.",
+        default="./configs/market_making/sanity_check.yml",
+        help="Path to a YAML configuration file.",
     )
     args = parser.parse_args()
 
-    overrides = {}
-    if args.config:
-        try:
-            with open(args.config, "r") as f:
-                overrides = yaml.safe_load(f)
-                if overrides is None:
-                    overrides = {}
-        except Exception as e:
-            print(f"Error reading config file {args.config}: {e}.")
-            exit(1)
+    try:
+        with open(args.config, "r") as f:
+            config = yaml.safe_load(f)
+            if config is None:
+                raise ValueError(f"Config file '{args.config}' is empty.")
+    except Exception as e:
+        print(f"Error reading config file {args.config}: {e}.")
+        exit(1)
 
-    run_pipeline(results_dir=args.results_dir, config_override=overrides)
+    run_pipeline(config=config, results_dir=args.results_dir)
