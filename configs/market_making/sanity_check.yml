@@ -1,12 +1,12 @@
-experiment_name: "pzomd_1fp"
+experiment_name: "sanity_check"
 
-n_samples: 1000000
-history_window: 1
+n_samples: 10000
+history_window: 2
 
 env:
   n_makers: 2
-  n_episodes: 100000
-  n_rounds: 100000
+  n_episodes: 100
+  n_rounds: 10000
   epsilon: 0.001
 
 generator:
@@ -26,7 +26,7 @@ agent:
   decay_eta: 0.75
   min_delta: 0.001
   min_eta: 0.001
-  max_grad_norm: 5.0
+  max_grad_norm: 5.0  
   project_fn:
     _target_: "lama_lab.projectors.MarketMakingProjector"
     low: 0.0

@@ -1,0 +1,38 @@
+experiment_name: "exp3_1fp"
+
+n_samples: 1000000
+history_window: 1
+
+env:
+  n_makers: 2
+  n_episodes: 100000
+  n_rounds: 100000
+  epsilon: 0.001
+
+generator:
+  _target_: "lama_lab.generators.GaussianMixtureGenerator"
+  weights: [1.0]
+  means: [0.5]
+  stds: [0.1]
+  low: 0.0
+  high: 1.0
+
+agent:
+  _target_: "lama_lab.agents.AgentExp3"
+  eta: 0.1
+  gamma: 0.0
+  action_space:
+    - [0.0, 0.2]
+    - [0.0, 0.4]
+    - [0.0, 0.6]
+    - [0.0, 0.8]
+    - [0.0, 1.0]
+    - [0.2, 0.4]
+    - [0.2, 0.6]
+    - [0.2, 0.8]
+    - [0.2, 1.0]
+    - [0.4, 0.6]
+    - [0.4, 0.8]
+    - [0.4, 1.0]
+    - [0.6, 0.8]
+    - [0.6, 1.0]
