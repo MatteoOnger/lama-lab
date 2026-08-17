@@ -263,6 +263,40 @@ def get_expected_payoff_matrix(
     return payoff
 
 
+def get_pure_nash(payoff: torch.Tensor, tol: float = 0.0) -> torch.Tensor:
+    """Enumerate the pure Nash equilibria of the finite game.
+
+    The profile ``(i, j)`` is a pure Nash equilibrium when neither maker gains
+    by unilaterally switching arm. This is computed directly on the finite
+    action set, and is therefore unrelated to the fixed points of the
+    continuous game returned by
+    :func:`~lama_lab.analysis.get_all_unique_fixed_points`.
+
+    Parameters
+    ----------
+    payoff : torch.Tensor
+        Payoff matrix of the row maker, of shape ``(n_arms, n_arms)``, as
+        returned by :func:`get_expected_payoff_matrix`. The payoff matrix of the
+        column maker is its transpose.
+    tol : float, optional
+        Slack allowed on each best-response condition, so that profiles within
+        `tol` of optimal are retained.
+
+    Returns
+    -------
+    profiles : torch.Tensor
+        Tensor of shape ``(n_profiles, 2)`` containing the arm indices of the
+        row and column maker at each equilibrium, in lexicographic order.
+    """
+    best = payoff.amax(dim=0)
+
+    # Row maker plays i against column j, column maker plays j against row i
+    row_is_best = payoff >= best[None, :] - tol
+    col_is_best = payoff.T >= best[:, None] - tol
+
+    return torch.nonzero(row_is_best & col_is_best)
+
+
 def get_exploitability(
     payoff: torch.Tensor,
     row_policy: torch.Tensor,

@@ -13,6 +13,7 @@ from .payoffs import (
     build_quote_grid,
     get_expected_payoff_matrix,
     get_exploitability,
+    get_pure_nash,
 )
 
 __all__ = [
@@ -23,4 +24,5 @@ __all__ = [
     "get_expected_payoff_matrix",
     "get_exploitability",
     "get_nash_market_making",
+    "get_pure_nash",
 ]
