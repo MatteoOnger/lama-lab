@@ -1,5 +1,6 @@
 experiment_name: "exp3_1fp"
 
+seed: 0
 n_samples: 1000000
 history_window: 1
 
@@ -22,18 +23,12 @@ agent:
   eta: 0.1
   gamma: 0.0
   action_space:
-    - [0.0, 0.2]
-    - [0.0, 0.4]
-    - [0.0, 0.6]
-    - [0.0, 0.8]
-    - [0.0, 1.0]
-    - [0.2, 0.4]
-    - [0.2, 0.6]
-    - [0.2, 0.8]
-    - [0.2, 1.0]
-    - [0.4, 0.6]
-    - [0.4, 0.8]
-    - [0.4, 1.0]
-    - [0.6, 0.8]
-    - [0.6, 1.0]
-    - [0.8, 1.0]
+    _target_: "lama_lab.analysis.build_quote_grid"
+    low: 0.0
+    high: 1.0
+    delta: 0.2
+    epsilon: 0.001
+
+diagnostics:
+  n_diag_episodes: 64
+  checkpoints: null

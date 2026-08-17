@@ -213,9 +213,7 @@ class Exp3Diagnostics:
         self.mu_sum += policies[0].unsqueeze(-1) * policies[1].unsqueeze(-2)
         self.policy_sum += policies
 
-        ones = torch.ones(
-            (self.n_episodes, 1), dtype=self.dtype, device=self.device
-        )
+        ones = torch.ones((self.n_episodes, 1), dtype=self.dtype, device=self.device)
         self.joint_counts.scatter_add_(
             1, (arms[0] * self.n_arms + arms[1]).unsqueeze(-1), ones
         )
@@ -335,9 +333,7 @@ class Exp3Diagnostics:
         )
         avg_regret_realized = realized_best - self.realized_sum / n
 
-        exploitability = torch.stack(
-            get_exploitability(payoff, policy[0], policy[1])
-        )
+        exploitability = torch.stack(get_exploitability(payoff, policy[0], policy[1]))
         bound = avg_regret + self.payoff_range * independence_tv
 
         excess = (exploitability - bound).amax().item()
@@ -407,9 +403,7 @@ class Exp3Diagnostics:
         if self._prev_policy_sum is None:
             window = policy
         else:
-            window = (self.policy_sum - self._prev_policy_sum) / (
-                self.t - self._prev_t
-            )
+            window = (self.policy_sum - self._prev_policy_sum) / (self.t - self._prev_t)
 
         if self._prev_window is None:
             drift = nan_drift

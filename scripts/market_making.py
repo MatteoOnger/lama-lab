@@ -9,6 +9,7 @@ import torch
 import lama_lab.analysis as analysis
 import lama_lab.plotting as plotting
 from lama_lab.agents import BaseAgent
+from lama_lab.diagnostics import Exp3Diagnostics, build_log_checkpoints
 from lama_lab.generators import BaseGenerator
 from lama_lab.envs import MarketMakingEnvironment
 from lama_lab.utils import ResultsManager, RingBuffer, build_from_config, setup_logger
@@ -46,8 +47,13 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
             n_rounds = config["env"]["n_rounds"]
             n_episodes = config["env"]["n_episodes"]
             window = config["history_window"]
+            seed = config.get("seed", None)
 
             logger.info(f"Final Configuration:\n{yaml.dump(config).removesuffix('\n')}")
+
+            if seed is not None:
+                torch.manual_seed(seed)
+                logger.info(f"Random seed set to {seed}.")
 
             # -------------------------------------------------------------------------
             # Environment & Agents Initialization
@@ -90,6 +96,53 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
                 colors.append("darkred" if is_nash else "tab:blue")
 
             # -------------------------------------------------------------------------
+            # Diagnostics
+            # -------------------------------------------------------------------------
+            diagnostics_cfg = config.get("diagnostics", None)
+            diagnostics = None
+
+            if diagnostics_cfg is not None:
+                if n_makers != 2:
+                    raise ValueError(
+                        f"Diagnostics are implemented for two makers only, "
+                        f"got {n_makers}."
+                    )
+                if any(maker.get_policy() is None for maker in makers):
+                    raise ValueError(
+                        "Diagnostics require agents exposing a policy over a "
+                        "finite action space, such as AgentExp3."
+                    )
+
+                # The joint distribution costs n_arms^2 values per episode, so
+                # it is tracked on a subset of the independent episodes
+                n_diag_episodes = min(
+                    diagnostics_cfg.get("n_diag_episodes", 64), n_episodes
+                )
+
+                checkpoints = diagnostics_cfg.get("checkpoints", None)
+                if checkpoints is None:
+                    checkpoints = build_log_checkpoints(n_rounds)
+                checkpoints = sorted(
+                    {int(c) for c in checkpoints if 0 < int(c) <= n_rounds}
+                )
+
+                payoff = analysis.get_expected_payoff_matrix(
+                    makers[0].action_space, samples, epsilon=env.epsilon
+                )
+                diagnostics = Exp3Diagnostics(payoff, n_episodes=n_diag_episodes)
+
+                diagnostics_history = RingBuffer(
+                    len(checkpoints),
+                    shape=(len(Exp3Diagnostics.METRIC_NAMES), n_diag_episodes),
+                    device="cpu",
+                )
+
+                logger.info(
+                    f"Diagnostics enabled on {n_diag_episodes} episodes, "
+                    f"{payoff.shape[0]} arms, {len(checkpoints)} checkpoints."
+                )
+
+            # -------------------------------------------------------------------------
             # Buffers
             # -------------------------------------------------------------------------
             action_history = {
@@ -120,11 +173,39 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
             logger.info(f"Starting simulation loop for {n_rounds} rounds.")
 
             for round_idx in range(n_rounds):
+                # The mixed strategies must be read before the actions are drawn
+                if diagnostics is not None:
+                    policies = torch.stack(
+                        [maker.get_policy()[:n_diag_episodes] for maker in makers]
+                    )
+
                 last_actions = torch.stack([maker.act() for maker in makers], dim=1)
                 rewards = env.step(last_actions)
 
                 for j, maker in enumerate(makers):
                     maker.update(rewards[:, j])
+
+                if diagnostics is not None:
+                    diagnostics.update(
+                        policies,
+                        torch.stack(
+                            [
+                                maker.get_last_arms()[:n_diag_episodes]
+                                for maker in makers
+                            ]
+                        ),
+                    )
+
+                    if (round_idx + 1) in checkpoints:
+                        snapshot = diagnostics.snapshot()
+                        diagnostics_history.append(
+                            torch.stack(
+                                [
+                                    snapshot[name]
+                                    for name in Exp3Diagnostics.METRIC_NAMES
+                                ]
+                            )
+                        )
 
                 action_history["mean"].append(last_actions.mean(dim=0))
                 action_history["min"].append(last_actions.amin(dim=0))
@@ -252,6 +333,52 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
                 },
             }
 
+            if diagnostics is not None:
+                # shape: (n_checkpoints, n_metrics, n_diag_episodes)
+                diagnostics_table = diagnostics_history.get_all()
+
+                # Every episode is an independent replica, hence a seed: report
+                # the spread across them rather than a single trajectory
+                quantiles = torch.nanquantile(
+                    diagnostics_table,
+                    torch.tensor([0.25, 0.5, 0.75], device=diagnostics_table.device),
+                    dim=-1,
+                )
+
+                metrics["diagnostics"] = {
+                    "checkpoints": checkpoints,
+                    "n_episodes": n_diag_episodes,
+                    "payoff_range": diagnostics.payoff_range,
+                } | {
+                    label: {
+                        name: quantiles[q, :, i].tolist()
+                        for i, name in enumerate(Exp3Diagnostics.METRIC_NAMES)
+                    }
+                    for q, label in enumerate(("p25", "median", "p75"))
+                }
+
+                reported = (
+                    "max_avg_regret",
+                    "independence_tv",
+                    "max_exploitability",
+                    "bound_1",
+                    "policy_drift_1",
+                    "policy_drift_2",
+                    "realized_vs_expected_l1",
+                )
+                columns = [Exp3Diagnostics.METRIC_NAMES.index(n) for n in reported]
+
+                table = [
+                    "Diagnostics (median over episodes):",
+                    "       T  " + "  ".join(f"{name:>23}" for name in reported),
+                ]
+                for row, checkpoint in enumerate(checkpoints):
+                    values = "  ".join(
+                        f"{quantiles[1, row, col].item():>23.6f}" for col in columns
+                    )
+                    table.append(f"{checkpoint:>8}  {values}")
+                logger.info("\n".join(table))
+
             # -------------------------------------------------------------------------
             # Visualization
             # -------------------------------------------------------------------------
@@ -338,6 +465,15 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
                 "06_first_dispersion_histo2d": fig_first_dispersion_histo2d,
                 "07_last_dispersion_histo2d": fig_last_dispersion_histo2d,
             }
+
+            if diagnostics is not None:
+                distributions = diagnostics.get_distributions()
+                artifacts["diagnostics"] = {
+                    "table": diagnostics_table,
+                    "checkpoints": torch.tensor(checkpoints, device="cpu"),
+                    "payoff": diagnostics.payoff.cpu(),
+                } | {name: value.cpu() for name, value in distributions.items()}
+
             exp.save_all(artifacts)
 
             plt.close("all")
