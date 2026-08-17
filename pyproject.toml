@@ -16,6 +16,7 @@ dependencies = [
   "ipywidgets",
   "matplotlib",
   "numpy",
+  "scipy>=1.18.0",
   "torch",
 ]
 
