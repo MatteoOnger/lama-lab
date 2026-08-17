@@ -138,3 +138,9 @@ class AgentExp3(BaseAgent):
             "eta": float(self.eta),
             "gamma": float(self.gamma),
         }
+
+    def get_policy(self) -> torch.Tensor:
+        return self.compute_probs()
+
+    def get_last_arms(self) -> torch.Tensor | None:
+        return self._last_arms
