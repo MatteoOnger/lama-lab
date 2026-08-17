@@ -20,10 +20,13 @@ generator:
 
 agent:
   _target_: "lama_lab.agents.AgentExp3"
-  eta: 0.1
+  eta: 0.005
   gamma: 0.0
-  # Quotes and V both lie in [0, 1], so a gap is in [-1, 1]
-  reward_range: [-1.0, 1.0]
+  # [-(high - low) + delta, (high - low) / 2]: the executing side pays at most
+  # half the spread, and loses at most the whole range less one tick. Keep this
+  # tight, a loose bound wastes the loss range on a constant that does not
+  # cancel under bandit feedback.
+  reward_range: [-0.8, 0.5]
   action_space:
     _target_: "lama_lab.analysis.build_quote_grid"
     low: 0.0

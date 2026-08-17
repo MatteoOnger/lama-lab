@@ -20,11 +20,12 @@ generator:
 
 agent:
   _target_: "lama_lab.agents.AgentExp3"
-  # sqrt(2 * ln(K) / (T * K)) with K = 15 arms and T = 100000 rounds
+  # sqrt(2 * ln(K) / (T * K)) with K = 15 arms and T = 100000 rounds. That is
+  # the single-agent adversarial value; in self-play it is conservative and
+  # exp3_1fp.yml uses a larger one.
   eta: 0.002
   gamma: 0.0
-  # Quotes and V both lie in [0, 1], so a gap is in [-1, 1]
-  reward_range: [-1.0, 1.0]
+  reward_range: [-0.8, 0.5]
   action_space:
     _target_: "lama_lab.analysis.build_quote_grid"
     low: 0.0
