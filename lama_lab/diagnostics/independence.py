@@ -88,6 +88,12 @@ class Exp3Diagnostics:
         Number of episodes tracked. May be smaller than the number of episodes
         simulated, since the joint distribution costs ``n_arms ** 2`` values per
         episode.
+    pure_nash : torch.Tensor, optional
+        Tensor of shape ``(n_profiles, 2)`` listing the pure Nash profiles of the
+        game, as returned by :func:`~lama_lab.analysis.get_pure_nash`. Needed
+        only to report how much mass the learners put on them.
+    support_threshold : float, optional
+        Probability above which an arm counts towards the support size.
     device : torch.device, optional
         Device on which the accumulators are allocated. Defaults to the device
         of `payoff`.
@@ -140,12 +146,18 @@ class Exp3Diagnostics:
         "bound_2",
         "entropy_1",
         "entropy_2",
+        "max_last_exploitability",
+        "support_1",
+        "support_2",
+        "nash_mass",
     )
 
     def __init__(
         self,
         payoff: torch.Tensor,
         n_episodes: int,
+        pure_nash: torch.Tensor | None = None,
+        support_threshold: float = 1e-4,
         device: torch.device | None = None,
     ):
         if payoff.ndim != 2 or payoff.shape[0] != payoff.shape[1]:
@@ -163,7 +175,15 @@ class Exp3Diagnostics:
 
         self.n_arms = payoff.shape[0]
         self.n_episodes = n_episodes
+        self.support_threshold = support_threshold
         self.t = 0
+
+        self.pure_nash = None
+        if pure_nash is not None:
+            self.pure_nash = torch.zeros(
+                (self.n_arms, self.n_arms), dtype=self.dtype, device=self.device
+            )
+            self.pure_nash[pure_nash[:, 0], pure_nash[:, 1]] = 1.0
 
         shape = (n_episodes, self.n_arms)
         kwargs = {"dtype": self.dtype, "device": self.device}
@@ -174,6 +194,7 @@ class Exp3Diagnostics:
         self.arm_counts = torch.zeros((2, *shape), **kwargs)
         self.realized_sum = torch.zeros((2, n_episodes), **kwargs)
 
+        self._last_policies = None
         self._prev_policy_sum = None
         self._prev_window = None
         self._prev_t = 0
@@ -212,6 +233,7 @@ class Exp3Diagnostics:
         # Expected joint distribution of the round, free of sampling noise
         self.mu_sum += policies[0].unsqueeze(-1) * policies[1].unsqueeze(-2)
         self.policy_sum += policies
+        self._last_policies = policies
 
         ones = torch.ones((self.n_episodes, 1), dtype=self.dtype, device=self.device)
         self.joint_counts.scatter_add_(
@@ -232,10 +254,11 @@ class Exp3Diagnostics:
         Returns
         -------
         distributions : dict of str to torch.Tensor
-            The average marginals ``policy_1`` and ``policy_2`` of shape
-            ``(n_episodes, n_arms)``, the average joint distribution ``joint``
-            and the product of the average marginals ``product``, both of shape
-            ``(n_episodes, n_arms, n_arms)``.
+            The average marginals ``policy_1`` and ``policy_2`` and the marginals
+            of the last recorded round ``final_policy_1`` and ``final_policy_2``,
+            of shape ``(n_episodes, n_arms)``; the average joint distribution
+            ``joint`` and the product of the average marginals ``product``, both
+            of shape ``(n_episodes, n_arms, n_arms)``.
 
         Raises
         ------
@@ -249,6 +272,8 @@ class Exp3Diagnostics:
         return {
             "policy_1": policy[0],
             "policy_2": policy[1],
+            "final_policy_1": self._last_policies[0],
+            "final_policy_2": self._last_policies[1],
             "joint": self.mu_sum / self.t,
             "product": policy[0].unsqueeze(-1) * policy[1].unsqueeze(-2),
         }
@@ -348,6 +373,20 @@ class Exp3Diagnostics:
         drift = self._advance_window(policy)
         entropy = torch.special.entr(policy).sum(dim=-1)
 
+        # The quantities above describe the time average, which still carries
+        # the early exploration. These describe the policy as it stands now.
+        last = self._last_policies
+        last_exploitability = torch.stack(
+            get_exploitability(payoff, last[0], last[1])
+        ).amax(dim=0)
+        support = (last >= self.support_threshold).sum(dim=-1).to(self.dtype)
+
+        if self.pure_nash is None:
+            nash_mass = torch.full_like(independence_tv, float("nan"))
+        else:
+            joint_last = last[0].unsqueeze(-1) * last[1].unsqueeze(-2)
+            nash_mass = (joint_last * self.pure_nash).sum(dim=(-2, -1))
+
         return {
             "avg_regret_1": avg_regret[0],
             "avg_regret_2": avg_regret[1],
@@ -366,6 +405,10 @@ class Exp3Diagnostics:
             "bound_2": bound[1],
             "entropy_1": entropy[0],
             "entropy_2": entropy[1],
+            "max_last_exploitability": last_exploitability,
+            "support_1": support[0],
+            "support_2": support[1],
+            "nash_mass": nash_mass,
         }
 
     def _advance_window(self, policy: torch.Tensor) -> torch.Tensor:
