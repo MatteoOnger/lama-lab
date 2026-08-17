@@ -6,6 +6,7 @@
 
 **LAMA-Lab** (**L**earning **A**gents in **M**arket **A**rchitectures) is a modular Python research framework designed for simulating, logging and analyzing multi-agent learning dynamics in complex economic environments.
 
+
 ## Architecture Overview
 
 ```text
@@ -23,3 +24,14 @@ lama-lab/
 ├── results/                # Default directory for experiment outputs and saved artifacts
 ├── scripts/                # Standalone simulation execution scripts
 └── pyproject.toml          # Project configuration and dependency specifications
+```
+
+
+## Roadmap
+
+Future developments and features planned for upcoming releases:
+
+- [V] **EXP3 Learning Agent:** Add an implementation of the EXP3 algorithm (`AgentExp3`) for multi-armed bandit agent strategies.
+- [ ] **Script Generalization for Heterogeneous Agents:** Adapt execution scripts to seamlessly handle mixed populations with different agent types and parameters.
+- [V] **Nash Equilibrium Identification:** Extend `lama_lab.analysis` to identify which empirical fixed points correspond to formal Nash equilibria.
+- [V] **Generalized Plotting Suite:** Refactor visualization modules into more generic, reusable plotting utilities across diverse market settings.
