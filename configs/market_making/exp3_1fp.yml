@@ -22,6 +22,8 @@ agent:
   _target_: "lama_lab.agents.AgentExp3"
   eta: 0.1
   gamma: 0.0
+  # Quotes and V both lie in [0, 1], so a gap is in [-1, 1]
+  reward_range: [-1.0, 1.0]
   action_space:
     _target_: "lama_lab.analysis.build_quote_grid"
     low: 0.0
