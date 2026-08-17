@@ -129,7 +129,14 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
                 payoff = analysis.get_expected_payoff_matrix(
                     makers[0].action_space, samples, epsilon=env.epsilon
                 )
-                diagnostics = Exp3Diagnostics(payoff, n_episodes=n_diag_episodes)
+
+                # Equilibria of the finite game the makers actually play, which
+                # are unrelated to the fixed points of the continuous one
+                grid_nash = analysis.get_pure_nash(payoff)
+
+                diagnostics = Exp3Diagnostics(
+                    payoff, n_episodes=n_diag_episodes, pure_nash=grid_nash
+                )
 
                 diagnostics_history = RingBuffer(
                     len(checkpoints),
@@ -139,7 +146,8 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
 
                 logger.info(
                     f"Diagnostics enabled on {n_diag_episodes} episodes, "
-                    f"{payoff.shape[0]} arms, {len(checkpoints)} checkpoints."
+                    f"{payoff.shape[0]} arms, {len(checkpoints)} checkpoints, "
+                    f"{grid_nash.shape[0]} pure Nash profiles on the grid."
                 )
 
             # -------------------------------------------------------------------------
@@ -279,11 +287,11 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
             agent_last_rewards = rewards_data["last"].mean(dim=(0, 1))
 
             metrics = {
-                "fixed_points": {
+                "continuous_fixed_points": {
                     "vals": fixed_points[:, [0, 2]].tolist(),
                     "expected_spread": expected_spread.tolist(),
                 },
-                "nash_points": {
+                "continuous_nash_points": {
                     "vals": nash_points[:, [0, 2]].tolist(),
                 },
                 "global": {
@@ -337,6 +345,17 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
                 # shape: (n_checkpoints, n_metrics, n_diag_episodes)
                 diagnostics_table = diagnostics_history.get_all()
 
+                grid_nash_quotes = makers[0].action_space[grid_nash.cpu()]
+                metrics["finite_grid_pure_nash"] = {
+                    "count": grid_nash.shape[0],
+                    "indices": grid_nash.tolist(),
+                    "quotes": grid_nash_quotes.tolist(),
+                    "payoffs": [
+                        [payoff[i, j].item(), payoff[j, i].item()]
+                        for i, j in grid_nash.tolist()
+                    ],
+                }
+
                 # Every episode is an independent replica, hence a seed: report
                 # the spread across them rather than a single trajectory
                 quantiles = torch.nanquantile(
@@ -361,10 +380,10 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
                     "max_avg_regret",
                     "independence_tv",
                     "max_exploitability",
-                    "bound_1",
+                    "max_last_exploitability",
+                    "support_1",
+                    "nash_mass",
                     "policy_drift_1",
-                    "policy_drift_2",
-                    "realized_vs_expected_l1",
                 )
                 columns = [Exp3Diagnostics.METRIC_NAMES.index(n) for n in reported]
 
