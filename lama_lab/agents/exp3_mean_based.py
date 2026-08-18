@@ -1,5 +1,3 @@
-from typing import Any
-
 import torch
 
 from .exp3 import AgentExp3
@@ -24,10 +22,6 @@ class AgentExp3MeanBased(AgentExp3):
         Analytical lower and upper bound of the reward, used to normalize it to
         [0, 1]. Bounds observed empirically must not be used here, since the
         guarantee assumes the range holds for every realization.
-    signal : {"reward", "loss"}, optional
-        Quantity accumulated in the weights. The default is the mean-based
-        algorithm; ``"loss"`` keeps the schedule but takes the estimator of the
-        fixed-rate learner, which isolates one change from the other.
     name : str, optional
         Human-readable identifier for the agent.
 
@@ -62,12 +56,8 @@ class AgentExp3MeanBased(AgentExp3):
         n_episodes: int,
         action_space: torch.Tensor | list[list[float]],
         reward_range: tuple[float, float],
-        signal: str = "reward",
         name: str = "AgentExp3MeanBased",
     ):
-        if signal not in ("reward", "loss"):
-            raise ValueError(f"signal must be 'reward' or 'loss'. Got {signal!r}.")
-
         # The stored constants are placeholders: both getters below ignore them
         super().__init__(
             n_episodes=n_episodes,
@@ -77,25 +67,11 @@ class AgentExp3MeanBased(AgentExp3):
             gamma=1.0,
             name=name,
         )
-
-        self.signal = signal
         return
 
     def estimate_signal(self, reward: torch.Tensor) -> torch.Tensor:
-        """Normalized reward of the current round, in ``[0, 1]``.
-
-        Set `signal` to ``"loss"`` to accumulate the negated loss instead, which
-        is what the fixed-rate learner does. That combination is not the
-        mean-based algorithm, but it isolates the schedule from the estimator
-        when comparing against the fixed-rate control, which otherwise differs
-        in both at once.
-        """
-        if self.signal == "loss":
-            return super().estimate_signal(reward)
+        """Normalized reward of the current round, in ``[0, 1]``."""
         return (reward - self.reward_low) / (self.reward_high - self.reward_low)
-
-    def get_internal_state(self) -> dict[str, Any]:
-        return super().get_internal_state() | {"signal": self.signal}
 
     def get_learning_rate(self) -> float:
         return float(self._t) ** (-1.0 / 3.0)
