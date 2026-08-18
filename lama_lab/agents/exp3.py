@@ -1,5 +1,4 @@
 import logging
-
 from typing import Any
 
 import torch
@@ -195,7 +194,7 @@ class AgentExp3(BaseAgent):
         return self.eta
 
     def get_exploration(self) -> float:
-        """Uniform exploration weight of the current round, constant unless overridden."""
+        """Uniform exploration weight of the round, constant unless overridden."""
         return self.gamma
 
     def compute_probs(self) -> torch.Tensor:

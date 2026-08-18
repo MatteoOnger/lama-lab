@@ -238,7 +238,8 @@ class Exp3Diagnostics:
         expected_policies = (2, self.n_episodes, self.n_arms)
         if policies.shape != expected_policies:
             raise ValueError(
-                f"Expected policies shape {expected_policies}, got {tuple(policies.shape)}."
+                f"Expected policies shape {expected_policies}, "
+                f"got {tuple(policies.shape)}."
             )
         if arms.shape != (2, self.n_episodes):
             raise ValueError(

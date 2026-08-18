@@ -34,7 +34,6 @@ Writes ``probes.json`` and ``report.md`` into a timestamped results directory.
 """
 
 import argparse
-import json
 import math
 import traceback
 
@@ -842,7 +841,8 @@ def render_report(report: dict) -> str:
         f"- best action: {main_result['uniform_ranking']['best_action']}",
         f"- payoff-dominant action is the best response: "
         f"{main_result['uniform_ranking']['payoff_dominant_is_best']}",
-        f"- gap to runner-up: {main_result['uniform_ranking']['gap_to_runner_up']:+.5f}",
+        f"- gap to runner-up: "
+        f"{main_result['uniform_ranking']['gap_to_runner_up']:+.5f}",
         "",
         "## Path from uniform play to the equilibrium",
         "",
@@ -899,7 +899,8 @@ def render_report(report: dict) -> str:
             "",
             "## Initialisation dependence",
             "",
-            "| start | selected | selects payoff-dominant | max prob | exploitability |",
+            "| start | selected | selects payoff-dominant | max prob | "
+            "exploitability |",
             "|---|---|---|---|---|",
         ]
         for r in report["initialisation"]:
