@@ -162,15 +162,41 @@ class AgentExp3(BaseAgent):
                 self._warned_out_of_range = True
 
         reward = reward.clamp(self.reward_low, self.reward_high)
-        loss = (self.reward_high - reward) / (self.reward_high - self.reward_low)
 
-        # Importance sampling loss estimator: l_hat = l / p. Only the chosen arm
-        # gets its weight updated, and weights hold the negated cumulative loss.
-        estimated_loss = loss / self._last_probs
-        self.weights[batch_idxs, self._last_arms] -= estimated_loss
+        # Importance sampling estimator, applied only to the chosen arm
+        self.weights[batch_idxs, self._last_arms] += (
+            self.estimate_signal(reward) / self._last_probs
+        )
 
         self._t += 1
         return
+
+    def estimate_signal(self, reward: torch.Tensor) -> torch.Tensor:
+        """Quantity accumulated in the weights for the arm that was played.
+
+        Returns the negated normalized loss, so that the weights hold minus the
+        cumulative loss estimate and the sampling distribution is
+        ``exp(-eta * L_hat)``.
+
+        Parameters
+        ----------
+        reward : torch.Tensor
+            Rewards of the current round, already clamped to `reward_range`.
+
+        Returns
+        -------
+        signal : torch.Tensor
+            Tensor of the same shape as `reward`, in ``[-1, 0]``.
+        """
+        return -(self.reward_high - reward) / (self.reward_high - self.reward_low)
+
+    def get_learning_rate(self) -> float:
+        """Learning rate of the current round, constant unless overridden."""
+        return self.eta
+
+    def get_exploration(self) -> float:
+        """Uniform exploration weight of the current round, constant unless overridden."""
+        return self.gamma
 
     def compute_probs(self) -> torch.Tensor:
         """Compute the current sampling probabilities for all arms.
@@ -180,7 +206,8 @@ class AgentExp3(BaseAgent):
         probs : torch.Tensor
             Tensor of shape ``(n_episodes, n_arms)`` containing the probabilities.
         """
-        w = self.eta * self.weights
+        gamma = self.get_exploration()
+        w = self.get_learning_rate() * self.weights
 
         # Subtract max for numerical stability (prevents overflow in exp)
         w_max = torch.amax(w, dim=1, keepdim=True)
@@ -190,15 +217,15 @@ class AgentExp3(BaseAgent):
         probs = exp_w / torch.sum(exp_w, dim=1, keepdim=True)
 
         # Optional: Mix with uniform distribution for guaranteed exploration
-        if self.gamma > 0.0:
-            probs = (1.0 - self.gamma) * probs + (self.gamma / self.n_arms)
+        if gamma > 0.0:
+            probs = (1.0 - gamma) * probs + (gamma / self.n_arms)
         return probs
 
     def get_internal_state(self) -> dict[str, Any]:
         return {
             "t": int(self._t),
-            "eta": float(self.eta),
-            "gamma": float(self.gamma),
+            "eta": float(self.get_learning_rate()),
+            "gamma": float(self.get_exploration()),
             "reward_range": [self.reward_low, self.reward_high],
         }
 
