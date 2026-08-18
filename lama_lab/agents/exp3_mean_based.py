@@ -52,9 +52,10 @@ class AgentExp3MeanBased(AgentExp3):
     Any admissible pair satisfies the theory, but they are not equally quick.
     Measured over 100k rounds on the 15-arm grid, the two theorem targets pull
     in opposite directions: small exponents eliminate faster, large exponents
-    concentrate on the payoff-dominant action faster. The defaults are the best
-    compromise found, reaching the lowest exploitability of the pairs tried,
-    against :math:`(1/3, 1/4)` as originally proposed.
+    concentrate on the payoff-dominant action faster. The defaults sit near the
+    better end of that trade-off, well ahead of :math:`(1/3, 1/4)` as originally
+    proposed. Note that a narrow gap :math:`\alpha - \beta` makes the bound
+    above decay slowly, so the two exponents should not be brought too close.
 
     The reward form is deliberate here, and is the reason the exploration term
     is not optional. Accumulating :math:`\hat\sigma_t(a) = \sum_s \hat x_s(a)`
@@ -73,8 +74,8 @@ class AgentExp3MeanBased(AgentExp3):
         n_episodes: int,
         action_space: torch.Tensor | list[list[float]],
         reward_range: tuple[float, float],
-        eta_exponent: float = 1.0 / 2.0,
-        exploration_exponent: float = 2.0 / 5.0,
+        eta_exponent: float = 0.45,
+        exploration_exponent: float = 0.40,
         name: str = "AgentExp3MeanBased",
     ):
         if not 0.0 < exploration_exponent < eta_exponent:
