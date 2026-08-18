@@ -6,8 +6,8 @@ history_window: 1
 
 env:
   n_makers: 2
-  n_episodes: 100000
-  n_rounds: 100000
+  n_episodes: 2000
+  n_rounds: 1000000
   epsilon: 0.001
 
 generator:
