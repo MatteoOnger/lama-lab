@@ -38,10 +38,7 @@ import json
 import math
 import traceback
 
-import numpy as np
 import torch
-
-from scipy.optimize import linprog
 
 from lama_lab.agents import AgentExp3
 from lama_lab.analysis import (
@@ -49,6 +46,7 @@ from lama_lab.analysis import (
     get_expected_payoff_matrix,
     get_exploitability,
     get_pure_nash,
+    get_rationalizable_set,
 )
 from lama_lab.diagnostics import build_log_checkpoints
 from lama_lab.envs import MarketMakingEnvironment
@@ -62,61 +60,6 @@ TOL = 1e-09
 # ---------------------------------------------------------------------------
 # Solvers
 # ---------------------------------------------------------------------------
-def get_game_values(matrices: torch.Tensor) -> torch.Tensor:
-    """Value of a batch of zero-sum matrix games, where the row player maximizes.
-
-    The dominance margin of an action is the value of the game whose entries are
-    the payoff differences, so this has to be exact: an iterative solver
-    converges as the inverse square root of its iteration count, which is orders
-    of magnitude too coarse to separate a margin of zero from a small positive
-    one.
-
-    Parameters
-    ----------
-    matrices : torch.Tensor
-        Tensor of shape ``(n_games, n_rows, n_cols)``.
-
-    Returns
-    -------
-    values : torch.Tensor
-        Game values, of shape ``(n_games,)``.
-    """
-    n_games, n_rows, n_cols = matrices.shape
-    values = torch.zeros(n_games, dtype=matrices.dtype)
-
-    payoff = matrices.cpu().numpy()
-
-    for game in range(n_games):
-        # Variables are (sigma, v). Maximize v subject to sigma @ M >= v for
-        # every column, with sigma in the simplex.
-        cost = np.zeros(n_rows + 1)
-        cost[-1] = -1.0
-
-        upper = np.zeros((n_cols, n_rows + 1))
-        upper[:, :n_rows] = -payoff[game].T
-        upper[:, -1] = 1.0
-
-        equality = np.zeros((1, n_rows + 1))
-        equality[0, :n_rows] = 1.0
-
-        bounds = [(0.0, None)] * n_rows + [(None, None)]
-        solution = linprog(
-            cost,
-            A_ub=upper,
-            b_ub=np.zeros(n_cols),
-            A_eq=equality,
-            b_eq=np.ones(1),
-            bounds=bounds,
-            method="highs",
-        )
-
-        if not solution.success:
-            raise RuntimeError(f"Game value LP failed: {solution.message}")
-        values[game] = float(solution.x[-1])
-
-    return values
-
-
 def get_l1_distance_to_halfspace(
     direction: torch.Tensor,
     point: torch.Tensor,
@@ -182,80 +125,18 @@ def probe_iterated_dominance(
 ) -> dict:
     """Probe 1: iterated elimination of strictly dominated actions.
 
-    Elimination is simultaneous within a round, and considers domination by
-    mixed strategies as well as by pure ones, since the rationalizable set is
-    defined by the mixed notion.
-
-    Parameters
-    ----------
-    payoff : torch.Tensor
-        Payoff matrix of the row maker, of shape ``(n_arms, n_arms)``.
-    tol : float, optional
-        A dominance margin must exceed this to count.
-    max_mixed_arms : int, optional
-        Skip the mixed test above this many surviving arms, where the batched
-        game solve becomes the dominant cost.
-
-    Returns
-    -------
-    result : dict
-        Per-round elimination record and the surviving set.
+    Thin wrapper over :func:`~lama_lab.analysis.get_rationalizable_set`, which
+    the pipeline also uses, so the elimination layers reported here are the same
+    ones the diagnostics track.
     """
-    survivors = list(range(payoff.shape[0]))
-    rounds = []
-
-    while True:
-        index = torch.tensor(survivors, device=payoff.device)
-        sub = payoff[index][:, index]
-
-        # Pure: some other row beats this one against every surviving column
-        margin = sub.unsqueeze(0) - sub.unsqueeze(1)  # [i, k, j] = U[k,j] - U[i,j]
-        pure_margin, pure_by = margin.amin(dim=-1).max(dim=-1)
-        pure = pure_margin > tol
-
-        # Mixed: the best mixture beats this row by the value of a zero-sum game
-        mixed = torch.zeros_like(pure)
-        mixed_margin = torch.zeros_like(pure_margin)
-
-        if len(survivors) <= max_mixed_arms:
-            mixed_margin = get_game_values(margin)
-            mixed = mixed_margin > tol
-
-        dominated = pure | mixed
-        removed = [survivors[i] for i in range(len(survivors)) if dominated[i]]
-
-        rounds.append(
-            {
-                "round": len(rounds) + 1,
-                "surviving_before": list(survivors),
-                "pure_dominated": [
-                    survivors[i] for i in range(len(survivors)) if pure[i]
-                ],
-                "mixed_dominated": [
-                    survivors[i]
-                    for i in range(len(survivors))
-                    if mixed[i] and not pure[i]
-                ],
-                "dominating_action": {
-                    survivors[i]: survivors[int(pure_by[i])]
-                    for i in range(len(survivors))
-                    if pure[i]
-                },
-                "margins": {
-                    survivors[i]: max(pure_margin[i].item(), float(mixed_margin[i]))
-                    for i in range(len(survivors))
-                    if dominated[i]
-                },
-                "surviving_after": [s for s in survivors if s not in set(removed)],
-            }
-        )
-
-        if not removed:
-            break
-        survivors = rounds[-1]["surviving_after"]
+    layers, rounds = get_rationalizable_set(
+        payoff, tol=tol, max_mixed_arms=max_mixed_arms
+    )
+    survivors = layers[-1]
 
     return {
         "rounds": rounds,
+        "layers": layers[:-1],
         "rationalizable_indices": survivors,
         "n_survivors": len(survivors),
         "mixed_test_applied": payoff.shape[0] <= max_mixed_arms,
@@ -388,9 +269,12 @@ def probe_best_response_region(payoff: torch.Tensor, dagger: int) -> dict:
                 "boundary": boundary.tolist(),
             }
 
+    # A single-action game has no competitor, so the region is the whole simplex
+    smallest = min(gaps) if gaps else float("inf")
+
     return {
-        "min_gap_at_uniform": min(gaps),
-        "uniform_inside": min(gaps) > 0.0,
+        "min_gap_at_uniform": smallest,
+        "uniform_inside": smallest > 0.0,
         "nearest_competitor": nearest["action"],
         "l1_distance_to_boundary": nearest["distance"],
         "boundary_distribution": nearest["boundary"],

@@ -134,9 +134,20 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
                 # are unrelated to the fixed points of the continuous one
                 grid_nash = analysis.get_pure_nash(payoff)
 
+                # Actions removed at each elimination round, survivors last
+                grid_layers, _ = analysis.get_rationalizable_set(payoff)
+
                 diagnostics = Exp3Diagnostics(
-                    payoff, n_episodes=n_diag_episodes, pure_nash=grid_nash
+                    payoff,
+                    n_episodes=n_diag_episodes,
+                    pure_nash=grid_nash,
+                    layers=grid_layers,
                 )
+                diagnostics_extra = {
+                    "layer_masses": [],
+                    "nash_masses": [],
+                    "schedule": [],
+                }
 
                 diagnostics_history = RingBuffer(
                     len(checkpoints),
@@ -213,6 +224,19 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
                                     for name in Exp3Diagnostics.METRIC_NAMES
                                 ]
                             )
+                        )
+
+                        # One column per layer or per equilibrium, so these do
+                        # not fit the fixed-width table above
+                        diagnostics_extra["layer_masses"].append(
+                            diagnostics.get_layer_masses().cpu()
+                        )
+                        diagnostics_extra["nash_masses"].append(
+                            diagnostics.get_nash_masses().cpu()
+                        )
+                        state = makers[0].get_internal_state()
+                        diagnostics_extra["schedule"].append(
+                            [state["eta"], state["gamma"]]
                         )
 
                 action_history["mean"].append(last_actions.mean(dim=0))
@@ -356,6 +380,16 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
                     ],
                 }
 
+                metrics["rationalizable"] = {
+                    "layers": grid_layers,
+                    "n_survivors": len(grid_layers[-1]),
+                    "equals_nash_actions": sorted(grid_layers[-1])
+                    == sorted({i for i, j in grid_nash.tolist() if i == j}),
+                    "payoff_dominant_action": diagnostics.dagger,
+                    "nash_actions": diagnostics.nash_actions,
+                    "schedule": diagnostics_extra["schedule"],
+                }
+
                 # Every episode is an independent replica, hence a seed: report
                 # the spread across them rather than a single trajectory
                 quantiles = torch.nanquantile(
@@ -378,11 +412,11 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
 
                 reported = (
                     "max_avg_regret",
-                    "independence_tv",
-                    "max_exploitability",
                     "max_last_exploitability",
-                    "support_1",
+                    "mass_outside_cr_1",
+                    "best_response_gap_1",
                     "nash_mass",
+                    "support_1",
                     "policy_drift_1",
                 )
                 columns = [Exp3Diagnostics.METRIC_NAMES.index(n) for n in reported]
@@ -491,6 +525,9 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
                     "table": diagnostics_table,
                     "checkpoints": torch.tensor(checkpoints, device="cpu"),
                     "payoff": diagnostics.payoff.cpu(),
+                    # (n_checkpoints, 2, n_diag_episodes, n_layers or n_nash)
+                    "layer_masses": torch.stack(diagnostics_extra["layer_masses"]),
+                    "nash_masses": torch.stack(diagnostics_extra["nash_masses"]),
                 } | {name: value.cpu() for name, value in distributions.items()}
 
             exp.save_all(artifacts)

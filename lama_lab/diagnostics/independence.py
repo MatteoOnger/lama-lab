@@ -150,6 +150,10 @@ class Exp3Diagnostics:
         "support_1",
         "support_2",
         "nash_mass",
+        "mass_outside_cr_1",
+        "mass_outside_cr_2",
+        "best_response_gap_1",
+        "best_response_gap_2",
     )
 
     def __init__(
@@ -157,6 +161,7 @@ class Exp3Diagnostics:
         payoff: torch.Tensor,
         n_episodes: int,
         pure_nash: torch.Tensor | None = None,
+        layers: list[list[int]] | None = None,
         support_threshold: float = 1e-4,
         device: torch.device | None = None,
     ):
@@ -179,11 +184,24 @@ class Exp3Diagnostics:
         self.t = 0
 
         self.pure_nash = None
+        self.nash_actions = None
+        self.dagger = None
+
         if pure_nash is not None:
             self.pure_nash = torch.zeros(
                 (self.n_arms, self.n_arms), dtype=self.dtype, device=self.device
             )
             self.pure_nash[pure_nash[:, 0], pure_nash[:, 1]] = 1.0
+
+            # The payoff-dominant action is the symmetric equilibrium paying most
+            symmetric = sorted({i for i, j in pure_nash.tolist() if i == j})
+            self.nash_actions = symmetric
+            if symmetric:
+                self.dagger = max(symmetric, key=lambda a: self.payoff[a, a].item())
+
+        # Actions removed at each elimination round, the survivors coming last
+        self.layers = layers
+        self.rationalizable = layers[-1] if layers else None
 
         shape = (n_episodes, self.n_arms)
         kwargs = {"dtype": self.dtype, "device": self.device}
@@ -387,6 +405,24 @@ class Exp3Diagnostics:
             joint_last = last[0].unsqueeze(-1) * last[1].unsqueeze(-2)
             nash_mass = (joint_last * self.pure_nash).sum(dim=(-2, -1))
 
+        # Mass the current policy still places on eliminated actions
+        if self.rationalizable is None:
+            outside = torch.full_like(last[:, :, 0], float("nan"))
+        else:
+            index = torch.tensor(self.rationalizable, device=self.device)
+            outside = 1.0 - last[:, :, index].sum(dim=-1)
+
+        # Advantage of the payoff-dominant action over its best competitor,
+        # each player measured against the other's current policy
+        if self.dagger is None:
+            gap = torch.full_like(last[:, :, 0], float("nan"))
+        else:
+            value = last.flip(0) @ payoff.T
+            own = value[:, :, self.dagger]
+            competitors = value.clone()
+            competitors[:, :, self.dagger] = -float("inf")
+            gap = own - competitors.amax(dim=-1)
+
         return {
             "avg_regret_1": avg_regret[0],
             "avg_regret_2": avg_regret[1],
@@ -409,7 +445,48 @@ class Exp3Diagnostics:
             "support_1": support[0],
             "support_2": support[1],
             "nash_mass": nash_mass,
+            "mass_outside_cr_1": outside[0],
+            "mass_outside_cr_2": outside[1],
+            "best_response_gap_1": gap[0],
+            "best_response_gap_2": gap[1],
         }
+
+    def get_layer_masses(self) -> torch.Tensor | None:
+        """Probability the current policies place on each elimination layer.
+
+        Returns
+        -------
+        masses : torch.Tensor or None
+            Tensor of shape ``(2, n_episodes, n_layers)``, the last column being
+            the rationalizable set. ``None`` when no layers were supplied.
+        """
+        if self.layers is None or self._last_policies is None:
+            return None
+
+        return torch.stack(
+            [
+                self._last_policies[:, :, torch.tensor(layer, device=self.device)].sum(
+                    dim=-1
+                )
+                for layer in self.layers
+            ],
+            dim=-1,
+        )
+
+    def get_nash_masses(self) -> torch.Tensor | None:
+        """Probability the current policies place on each pure Nash action.
+
+        Returns
+        -------
+        masses : torch.Tensor or None
+            Tensor of shape ``(2, n_episodes, n_nash_actions)``, ordered as
+            :attr:`nash_actions`. ``None`` when no equilibria were supplied.
+        """
+        if not self.nash_actions or self._last_policies is None:
+            return None
+
+        index = torch.tensor(self.nash_actions, device=self.device)
+        return self._last_policies[:, :, index]
 
     def _advance_window(self, policy: torch.Tensor) -> torch.Tensor:
         """Measure how much the average policy moved since the previous call.

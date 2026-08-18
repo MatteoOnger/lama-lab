@@ -1,4 +1,7 @@
+import numpy as np
 import torch
+
+from scipy.optimize import linprog
 
 
 def build_ecdf(
@@ -295,6 +298,157 @@ def get_pure_nash(payoff: torch.Tensor, tol: float = 0.0) -> torch.Tensor:
     col_is_best = payoff.T >= best[:, None] - tol
 
     return torch.nonzero(row_is_best & col_is_best)
+
+
+def get_game_values(matrices: torch.Tensor) -> torch.Tensor:
+    """Value of a batch of zero-sum matrix games, where the row player maximizes.
+
+    Solved exactly. The dominance margin of an action is such a value, and an
+    iterative solver converges as the inverse square root of its iteration
+    count, which is far too coarse to separate a margin of zero from a small
+    positive one.
+
+    Parameters
+    ----------
+    matrices : torch.Tensor
+        Tensor of shape ``(n_games, n_rows, n_cols)``.
+
+    Returns
+    -------
+    values : torch.Tensor
+        Game values, of shape ``(n_games,)``.
+
+    Raises
+    ------
+    RuntimeError
+        If the underlying linear program fails to solve.
+    """
+    n_games, n_rows, n_cols = matrices.shape
+    values = torch.zeros(n_games, dtype=matrices.dtype)
+    payoff = matrices.cpu().numpy()
+
+    # Variables are (sigma, v): maximize v subject to sigma @ M >= v on every
+    # column, with sigma in the simplex
+    cost = np.zeros(n_rows + 1)
+    cost[-1] = -1.0
+
+    equality = np.zeros((1, n_rows + 1))
+    equality[0, :n_rows] = 1.0
+
+    bounds = [(0.0, None)] * n_rows + [(None, None)]
+
+    for game in range(n_games):
+        upper = np.zeros((n_cols, n_rows + 1))
+        upper[:, :n_rows] = -payoff[game].T
+        upper[:, -1] = 1.0
+
+        solution = linprog(
+            cost,
+            A_ub=upper,
+            b_ub=np.zeros(n_cols),
+            A_eq=equality,
+            b_eq=np.ones(1),
+            bounds=bounds,
+            method="highs",
+        )
+
+        if not solution.success:
+            raise RuntimeError(f"Game value LP failed: {solution.message}")
+        values[game] = float(solution.x[-1])
+
+    return values
+
+
+def get_rationalizable_set(
+    payoff: torch.Tensor,
+    tol: float = 1e-06,
+    max_mixed_arms: int = 400,
+) -> tuple[list[list[int]], list[dict]]:
+    """Iteratively eliminate strictly dominated actions.
+
+    Elimination is simultaneous within a round and allows domination by mixed
+    strategies, which is the notion the rationalizable set is defined by.
+    Domination by a mixture is decided by :func:`get_game_values`, since the
+    largest margin achievable against action ``i`` is the value of the zero-sum
+    game whose entries are the payoff differences.
+
+    Parameters
+    ----------
+    payoff : torch.Tensor
+        Payoff matrix of the row maker, of shape ``(n_arms, n_arms)``.
+    tol : float, optional
+        A dominance margin must exceed this to count.
+    max_mixed_arms : int, optional
+        Skip the mixed test while more than this many actions survive, where
+        the repeated linear programs dominate the cost.
+
+    Returns
+    -------
+    layers : list of list of int
+        The actions removed at each round, in order, with the surviving set
+        appended last. Together they partition the action set.
+    rounds : list of dict
+        Per-round detail: the surviving set, which actions were removed by a
+        pure or a mixed strategy, the dominating action where it is pure, and
+        the margins.
+    """
+    survivors = list(range(payoff.shape[0]))
+    layers = []
+    rounds = []
+
+    while True:
+        index = torch.tensor(survivors, device=payoff.device)
+        sub = payoff[index][:, index]
+
+        # margin[i, k, j] is U[k, j] - U[i, j]
+        margin = sub.unsqueeze(0) - sub.unsqueeze(1)
+        pure_margin, pure_by = margin.amin(dim=-1).max(dim=-1)
+        pure = pure_margin > tol
+
+        mixed = torch.zeros_like(pure)
+        mixed_margin = torch.zeros_like(pure_margin)
+
+        if len(survivors) <= max_mixed_arms:
+            mixed_margin = get_game_values(margin)
+            mixed = mixed_margin > tol
+
+        dominated = pure | mixed
+        removed = [survivors[i] for i in range(len(survivors)) if dominated[i]]
+
+        rounds.append(
+            {
+                "round": len(rounds) + 1,
+                "surviving_before": list(survivors),
+                "pure_dominated": [
+                    survivors[i] for i in range(len(survivors)) if pure[i]
+                ],
+                "mixed_dominated": [
+                    survivors[i]
+                    for i in range(len(survivors))
+                    if mixed[i] and not pure[i]
+                ],
+                "dominating_action": {
+                    survivors[i]: survivors[int(pure_by[i])]
+                    for i in range(len(survivors))
+                    if pure[i]
+                },
+                "margins": {
+                    survivors[i]: max(pure_margin[i].item(), float(mixed_margin[i]))
+                    for i in range(len(survivors))
+                    if dominated[i]
+                },
+                "surviving_after": [s for s in survivors if s not in set(removed)],
+            }
+        )
+
+        if not removed:
+            break
+
+        layers.append(removed)
+        survivors = rounds[-1]["surviving_after"]
+
+    layers.append(survivors)
+    return layers, rounds
 
 
 def get_exploitability(
