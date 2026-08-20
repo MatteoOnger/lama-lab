@@ -1,0 +1,35 @@
+experiment_name: "exp3_meanbased_d01"
+
+seed: 0
+n_samples: 1000000
+history_window: 1
+
+env:
+  n_makers: 2
+  n_episodes: 2000
+  n_rounds: 1000000
+  epsilon: 0.001
+
+generator:
+  _target_: "lama_lab.generators.GaussianMixtureGenerator"
+  weights: [1.0]
+  means: [0.5]
+  stds: [0.1]
+  low: 0.0
+  high: 1.0
+
+agent:
+  _target_: "lama_lab.agents.AgentExp3MeanBased"
+  # Analytical bound [-(high - low) + delta, (high - low) / 2]. No eta or gamma:
+  # the schedule is eta_t = t^(-1/3) and epsilon_t = t^(-1/4), with no multiplier.
+  reward_range: [-0.9, 0.5]
+  action_space:
+    _target_: "lama_lab.analysis.build_quote_grid"
+    low: 0.0
+    high: 1.0
+    delta: 0.1
+    epsilon: 0.001
+
+diagnostics:
+  n_diag_episodes: 64
+  checkpoints: null

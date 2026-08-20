@@ -96,6 +96,36 @@ class BaseAgent(ABC):
         """
         return {}
 
+    def get_policy(self) -> torch.Tensor | None:
+        """Retrieve the current distribution over a discrete action space.
+
+        Returns
+        -------
+        policy : torch.Tensor or None
+            Tensor of shape ``(n_episodes, n_arms)`` containing the probability
+            assigned to each arm, or ``None`` for agents that do not maintain
+            an explicit distribution over a finite set of actions.
+
+        Notes
+        -----
+        Intended for diagnostics that need the mixed strategy of the agent
+        *before* it is sampled from, and therefore before :meth:`act` is
+        called.
+        """
+        return None
+
+    def get_last_arms(self) -> torch.Tensor | None:
+        """Retrieve the indices of the arms selected by the last call to :meth:`act`.
+
+        Returns
+        -------
+        arms : torch.Tensor or None
+            Tensor of shape ``(n_episodes,)`` containing the index of the
+            selected arm within the action space, or ``None`` for agents that
+            do not act on a finite set of actions or have not acted yet.
+        """
+        return None
+
     @abstractmethod
     def _act(self) -> torch.Tensor:
         """Internal action-selection routine.

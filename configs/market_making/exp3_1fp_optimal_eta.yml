@@ -1,4 +1,4 @@
-experiment_name: "exp3_1fp"
+experiment_name: "exp3_1fp_optimal_eta"
 
 seed: 0
 n_samples: 1000000
@@ -20,12 +20,11 @@ generator:
 
 agent:
   _target_: "lama_lab.agents.AgentExp3"
-  eta: 0.005
+  # sqrt(2 * ln(K) / (T * K)) with K = 15 arms and T = 100000 rounds. That is
+  # the single-agent adversarial value; in self-play it is conservative and
+  # exp3_1fp.yml uses a larger one.
+  eta: 0.002
   gamma: 0.0
-  # [-(high - low) + delta, (high - low) / 2]: the executing side pays at most
-  # half the spread, and loses at most the whole range less one tick. Keep this
-  # tight, a loose bound wastes the loss range on a constant that does not
-  # cancel under bandit feedback.
   reward_range: [-0.8, 0.5]
   action_space:
     _target_: "lama_lab.analysis.build_quote_grid"

@@ -40,6 +40,16 @@ def get_nash_market_making(
     out : torch.Tensor
         Tensor containing only the rows from ``fixed_points`` that are verified
         Nash Equilibria.
+
+    Notes
+    -----
+    This is a test on the *continuous* game: it judges the candidate fixed
+    points over a continuum of deviations, assuming the deviating agent wins the
+    whole trade alone and deviates on one side at a time. It is therefore not
+    the equilibrium test for the finite action set an agent such as
+    :class:`~lama_lab.agents.AgentExp3` actually plays on, which is
+    :func:`~lama_lab.analysis.get_pure_nash`, and the two sets can be far apart
+    when the tick is coarse.
     """
     if fixed_points.numel() == 0:
         return fixed_points

@@ -1,4 +1,4 @@
-experiment_name: "exp3_1fp"
+experiment_name: "exp3_meanbased_d02"
 
 seed: 0
 n_samples: 1000000
@@ -19,13 +19,9 @@ generator:
   high: 1.0
 
 agent:
-  _target_: "lama_lab.agents.AgentExp3"
-  eta: 0.005
-  gamma: 0.0
-  # [-(high - low) + delta, (high - low) / 2]: the executing side pays at most
-  # half the spread, and loses at most the whole range less one tick. Keep this
-  # tight, a loose bound wastes the loss range on a constant that does not
-  # cancel under bandit feedback.
+  _target_: "lama_lab.agents.AgentExp3MeanBased"
+  # Analytical bound [-(high - low) + delta, (high - low) / 2]. No eta or gamma:
+  # the schedule is eta_t = t^(-1/3) and epsilon_t = t^(-1/4), with no multiplier.
   reward_range: [-0.8, 0.5]
   action_space:
     _target_: "lama_lab.analysis.build_quote_grid"
