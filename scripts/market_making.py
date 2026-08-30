@@ -107,6 +107,7 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
                         f"Diagnostics are implemented for two makers only, "
                         f"got {n_makers}."
                     )
+
                 if any(maker.get_policy() is None for maker in makers):
                     raise ValueError(
                         "Diagnostics require agents exposing a policy over a "
@@ -209,7 +210,7 @@ def run_pipeline(config: dict, results_dir: str = "./results"):
                         policies,
                         torch.stack(
                             [
-                                maker.get_last_arms()[:n_diag_episodes]
+                                maker.get_last_action_index()[:n_diag_episodes]
                                 for maker in makers
                             ]
                         ),

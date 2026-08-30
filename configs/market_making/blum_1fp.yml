@@ -1,0 +1,36 @@
+experiment_name: "blum_1fp"
+
+seed: 0
+n_samples: 10000
+history_window: 1
+
+env:
+  n_makers: 2
+  n_episodes: 100
+  n_rounds: 100000
+  epsilon: 0.001
+
+generator:
+  _target_: "lama_lab.generators.GaussianMixtureGenerator"
+  weights: [1.0]
+  means: [0.5]
+  stds: [0.1]
+  low: 0.0
+  high: 1.0
+
+agent:
+  _target_: "lama_lab.agents.AgentBlumMansour"
+  action_space:
+    _target_: "lama_lab.analysis.build_quote_grid"
+    low: 0.0
+    high: 1.0
+    delta: 0.2
+    epsilon: 0.001
+  expert_cfg:
+    _partial_: True
+    _target_: "lama_lab.agents.AgentExp3MeanBased"
+    reward_range: [-0.8, 0.5]
+
+diagnostics:
+  n_diag_episodes: 64
+  checkpoints: null

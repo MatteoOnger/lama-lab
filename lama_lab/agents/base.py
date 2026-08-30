@@ -35,6 +35,10 @@ class BaseAgent(ABC):
         self.n_episodes = n_episodes
         self.action_dim = action_dim
         self.name = name
+
+        self._last_action = None
+        self._last_action_index = None
+        self._last_action_probability = None
         return
 
     def act(self) -> torch.Tensor:
@@ -59,6 +63,8 @@ class BaseAgent(ABC):
                 f"Expected action shape ({self.n_episodes}, {self.action_dim}), "
                 f"got {action.shape}."
             )
+
+        self._last_action = action
         return action
 
     def update(self, reward: torch.Tensor) -> None:
@@ -102,29 +108,47 @@ class BaseAgent(ABC):
         Returns
         -------
         policy : torch.Tensor or None
-            Tensor of shape ``(n_episodes, n_arms)`` containing the probability
+            Tensor of shape ``(n_episodes, n_actions)`` containing the probability
             assigned to each arm, or ``None`` for agents that do not maintain
             an explicit distribution over a finite set of actions.
-
-        Notes
-        -----
-        Intended for diagnostics that need the mixed strategy of the agent
-        *before* it is sampled from, and therefore before :meth:`act` is
-        called.
         """
         return None
 
-    def get_last_arms(self) -> torch.Tensor | None:
-        """Retrieve the indices of the arms selected by the last call to :meth:`act`.
+    def get_last_action(self) -> torch.Tensor | None:
+        """Retrieve the action(s) selected by the last call to :meth:`act`.
 
         Returns
         -------
-        arms : torch.Tensor or None
-            Tensor of shape ``(n_episodes,)`` containing the index of the
-            selected arm within the action space, or ``None`` for agents that
+        last_action : torch.Tensor or None
+            Tensor of shape ``(n_episodes, action_dim)`` containing the selected
+            action(s) within the action space, or ``None`` for agents that
+            have not acted yet.
+        """
+        return self._last_action
+
+    def get_last_action_index(self) -> torch.Tensor | None:
+        """Retrieve the index(es) of the action(s) selected by the last call to :meth:`act`.
+
+        Returns
+        -------
+        last_action_index : torch.Tensor or None
+            Tensor of shape ``(n_episodes,)`` containing the index(es) of the
+            selected action(s) within the action space, or ``None`` for agents that
             do not act on a finite set of actions or have not acted yet.
         """
-        return None
+        return self._last_action_index
+
+    def get_last_action_probability(self) -> torch.Tensor | None:
+        """Retrieve the probability(ies) of the action(s) selected by the last call to :meth:`act`.
+
+        Returns
+        -------
+        last_action_probability : torch.Tensor or None
+            Tensor of shape ``(n_episodes,)`` containing the probability(ies) of the
+            selected action(s) within the action space, or ``None`` for agents that
+            do not act on a finite set of actions or have not acted yet.
+        """
+        return self._last_action_probability
 
     @abstractmethod
     def _act(self) -> torch.Tensor:

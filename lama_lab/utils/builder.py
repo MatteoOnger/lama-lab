@@ -1,17 +1,22 @@
-import importlib
 import copy
+import importlib
 
 
 def build_from_config(config):
-    """
-    Recursively instantiates objects from a configuration dictionary.
+    """Recursively instantiates objects from a configuration dictionary.
+
     If a dictionary contains a '_target_' key, it imports the specified
     callable and initializes it with the remaining key-value pairs.
+    If '_partial_: true' is present, instantiation is skipped entirely and
+    the raw dictionary is returned as-is.
     """
     if not isinstance(config, dict):
         return config
 
     cfg = copy.deepcopy(config)
+
+    if cfg.pop("_partial_", False):
+        return cfg
 
     if "_target_" not in cfg:
         return {k: build_from_config(v) for k, v in cfg.items()}
