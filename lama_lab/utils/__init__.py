@@ -1,7 +1,7 @@
 """Utility modules."""
 
 from .buffers import RingBuffer
-from .builder import build_from_config
+from .builders import build_from_config
 from .logging import setup_logger
 from .storage import ExperimentManager, ResultsManager
 
