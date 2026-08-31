@@ -13,7 +13,7 @@ class ExperimentManager:
     """Represents a single experiment directory for managing artifacts.
 
     Provides high-level methods to save and load data artifacts such as
-    JSON files, PyTorch tensors, matplotlib figures, text files, and pickled
+    JSON files, PyTorch tensors, matplotlib figures, text files and pickled
     objects within a dedicated experiment directory.
 
     Parameters
@@ -108,7 +108,7 @@ class ExperimentManager:
         name : str or Path
             File name or relative path.
         encoding : str, optional
-            Text encoding, by default ``"utf-8"``.
+            Text encoding.
 
         Returns
         -------
@@ -162,11 +162,16 @@ class ExperimentManager:
         ----------
         name : str or Path
             File name or relative path.
-        map_location : torch.device, str, or None, optional
-            Device location for loading the tensor, by default None.
+        map_location : torch.device or str, optional
+            A string (e.g., ``"cpu"`` or ``"cuda:0"``) or a :class:`torch.device`
+            specifying how to remap the tensor's storage location. This is
+            crucial when loading a tensor saved on a GPU machine onto a
+            CPU-only machine. If ``None``, the tensor is loaded onto the
+            device it was originally saved from.
         weights_only : bool, optional
-            Whether to restrict unpickling to tensors and primitive types for
-            security, by default True.
+            Whether to restrict unpickling to tensors and primitive types.
+            Setting this to ``True`` prevents arbitrary code execution when
+            loading untrusted files, by default ``True``.
 
         Returns
         -------
@@ -193,7 +198,7 @@ class ExperimentManager:
         name : str or Path
             File name or relative path.
         encoding : str, optional
-            Text encoding, by default ``"utf-8"``.
+            Text encoding.
 
         Returns
         -------
@@ -263,7 +268,7 @@ class ExperimentManager:
         fmt : str, optional
             Image format extension (e.g. ``"png"``, ``"pdf"``), by default ``"png"``.
         close : bool, optional
-            Whether to close the figure after saving to free memory, by default False.
+            Whether to close the figure after saving to free memory, by default ``False``.
 
         Returns
         -------
@@ -400,8 +405,9 @@ class ResultsManager:
 
         Returns
         -------
-        exp : Experiment
-            An initialized ``Experiment`` object bound to the existing directory.
+        exp : ExperimentManager
+            An initialized :class:`ExperimentManager` object bound to the existing
+            directory.
 
         Raises
         ------
@@ -410,11 +416,15 @@ class ResultsManager:
         """
         path = self.root / name
         if not path.is_dir():
-            raise FileNotFoundError(f"Experiment directory not found: {path}")
+            raise FileNotFoundError(f"Experiment directory not found: {path}.")
         return ExperimentManager(path)
 
     def list_experiments(self) -> list[Path]:
-        """List all experiment subdirectories under root sorted by creation time.
+        """List all experiment subdirectories under root, sorted alphabetically.
+
+        Since internally generated experiment directories begin with a
+        timestamp, this alphabetical sorting natively coincides with the
+        chronological creation order.
 
         Returns
         -------
@@ -429,12 +439,14 @@ class ResultsManager:
         Parameters
         ----------
         name : str, optional
-            Optional descriptive suffix for the experiment folder name.
+            Optional descriptive suffix for the experiment folder name. If
+            left as ``None``, only the timestamp will be used.
 
         Returns
         -------
-        exp : Experiment
-            An initialized ``Experiment`` object bound to the created directory.
+        exp : ExperimentManager
+            An initialized :class:`ExperimentManager` object bound to the created
+            directory.
         """
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         dirname = timestamp if name is None else f"{timestamp}_{name}"
