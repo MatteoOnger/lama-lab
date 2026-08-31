@@ -7,11 +7,11 @@ from typing import Any
 def build_from_config(config: Any) -> Any:
     """Recursively instantiates objects from a configuration container.
 
-    If a dictionary contains a '\_target\_' key, it dynamically imports the
+    If a dictionary contains a '_target_' key, it dynamically imports the
     specified callable (class or function) and instantiates/invokes it with
     the remaining key-value pairs as keyword arguments.
 
-    Supports deferred instantiation via '\_partial\_':
+    Supports deferred instantiation via '_partial_':
     - True or "partial": Returns a `functools.partial` object.
     - "dict" or "raw": Returns the raw configuration dictionary.
 
@@ -28,7 +28,14 @@ def build_from_config(config: Any) -> Any:
     Raises
     ------
     ValueError
-        If '\_target\_' is not a valid dot-separated string path.
+        If '_target_' is not a valid dot-separated string path.
+
+    Examples
+    --------
+    >>> cfg = {"_target_": "torch.zeros", "size": [2, 3]}
+    >>> build_from_config(cfg)
+    tensor([[0., 0., 0.],
+            [0., 0., 0.]])
     """
     if isinstance(config, list):
         return [build_from_config(item) for item in config]
