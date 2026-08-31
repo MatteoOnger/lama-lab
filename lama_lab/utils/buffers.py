@@ -30,7 +30,7 @@ class RingBuffer:
         capacity: int,
         shape: tuple[int, ...] = (),
         device: torch.device | None = None,
-    ) -> None:
+    ):
         if capacity <= 0:
             raise ValueError("'capacity' must be greater than 0.")
 

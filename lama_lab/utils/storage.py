@@ -390,7 +390,7 @@ class ResultsManager:
         Root directory where all experiment subdirectories will be stored.
     """
 
-    def __init__(self, root: str | Path) -> None:
+    def __init__(self, root: str | Path):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         return
