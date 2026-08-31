@@ -11,7 +11,8 @@ class RingBuffer:
     shape : tuple of int, optional
         Shape of each stored element, by default ``()``.
     device : torch.device, optional
-        Device on which the underlying tensor is allocated.
+        evice on which the underlying tensor is allocated. If ``None``, uses
+        the device returned by :func:`torch.get_default_device`.
 
     Attributes
     ----------
@@ -21,7 +22,7 @@ class RingBuffer:
     Raises
     ------
     ValueError
-        If ``capacity`` is less than or equal to 0.
+        If ``capacity`` is less than or equal to zero.
     """
 
     def __init__(
@@ -31,7 +32,7 @@ class RingBuffer:
         device: torch.device | None = None,
     ) -> None:
         if capacity <= 0:
-            raise ValueError("capacity must be greater than 0.")
+            raise ValueError("'capacity' must be greater than 0.")
 
         self.capacity = capacity
         self.shape = tuple(shape)
@@ -64,6 +65,7 @@ class RingBuffer:
         self._buffer[self._idx] = x
         self._idx = (self._idx + 1) % self.capacity
         self.size = min(self.size + 1, self.capacity)
+        return
 
     def get_all(self, device: torch.device | None = None) -> torch.Tensor:
         """Return all stored elements in chronological order.
@@ -111,12 +113,12 @@ class RingBuffer:
         IndexError
             If the buffer is empty.
         ValueError
-            If ``n`` is less than 1.
+            If ``n`` is less than one.
         """
         if self.size == 0:
             raise IndexError("Empty buffer.")
         if n < 1:
-            raise ValueError("n must be > 0")
+            raise ValueError("'n' must be > 0.")
 
         ordered = self.get_all()
         ordered = ordered[-n:]
