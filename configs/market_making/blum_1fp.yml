@@ -28,7 +28,7 @@ agent:
     epsilon: 0.001
   expert_cfg:
     _partial_: True
-    _target_: "lama_lab.agents.AgentExp3MeanBased"
+    _target_: "lama_lab.agents.AgentExp3"
     reward_range: [-0.8, 0.5]
 
 diagnostics:
