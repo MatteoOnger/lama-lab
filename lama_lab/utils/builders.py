@@ -62,7 +62,7 @@ def build_from_config(config: Any) -> Any:
     if not isinstance(target_path, str) or "." not in target_path:
         raise ValueError(
             f"'_target_' must be a dot-separated string path (e.g., 'module.Callable'). "
-            f"Got: {target_path!r}"
+            f"Got: {target_path!r}."
         )
 
     module_path, obj_name = target_path.rsplit(".", 1)

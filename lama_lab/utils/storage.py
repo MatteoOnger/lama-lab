@@ -23,7 +23,7 @@ class ExperimentManager:
         does not exist.
     """
 
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path) -> None:
         self.path = Path(path).resolve()
         self.path.mkdir(parents=True, exist_ok=True)
 
@@ -264,11 +264,11 @@ class ExperimentManager:
         fig : matplotlib.figure.Figure, optional
             Figure object to save. If ``None``, uses current active figure.
         dpi : int, optional
-            Resolution in dots per inch, by default 300.
+            Resolution in dots per inch.
         fmt : str, optional
-            Image format extension (e.g. ``"png"``, ``"pdf"``), by default ``"png"``.
+            Image format extension (e.g. ``"png"``, ``"pdf"``).
         close : bool, optional
-            Whether to close the figure after saving to free memory, by default ``False``.
+            Whether to close the figure after saving to free memory.
 
         Returns
         -------
@@ -298,9 +298,9 @@ class ExperimentManager:
         obj : Any
             JSON-serializable object.
         indent : int, optional
-            Indentation level for formatting, by default 4.
+            Indentation level for formatting.
         encoding : str, optional
-            Text encoding, by default ``"utf-8"``.
+            Text encoding.
 
         Returns
         -------
@@ -361,7 +361,7 @@ class ExperimentManager:
         text : str
             Text string to write.
         encoding : str, optional
-            Text encoding, by default ``"utf-8"``.
+            Text encoding.
 
         Returns
         -------
@@ -390,7 +390,7 @@ class ResultsManager:
         Root directory where all experiment subdirectories will be stored.
     """
 
-    def __init__(self, root: str | Path):
+    def __init__(self, root: str | Path) -> None:
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         return

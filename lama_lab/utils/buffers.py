@@ -9,9 +9,9 @@ class RingBuffer:
     capacity : int
         Maximum number of elements stored by the buffer.
     shape : tuple of int, optional
-        Shape of each stored element, by default ``()``.
+        Shape of each stored element.
     device : torch.device, optional
-        evice on which the underlying tensor is allocated. If ``None``, uses
+        Device on which the underlying tensor is allocated. If ``None``, uses
         the device returned by :func:`torch.get_default_device`.
 
     Attributes
@@ -30,7 +30,7 @@ class RingBuffer:
         capacity: int,
         shape: tuple[int, ...] = (),
         device: torch.device | None = None,
-    ):
+    ) -> None:
         if capacity <= 0:
             raise ValueError("'capacity' must be greater than 0.")
 
