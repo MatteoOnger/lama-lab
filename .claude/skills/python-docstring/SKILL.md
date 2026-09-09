@@ -19,7 +19,8 @@ Use concise, precise **NumPy-style docstrings**.
 ### General rules
 
 - Public classes, functions, and methods should have appropriate docstrings.
-- Private implementation details (e.g., `_internal_method`) do not necessarily need docstrings unless complex.
+- When you find a sequence of """""""" with no content, add a meaningful docstring.
+- Private implementation details (e.g., `_internal_method`) do not necessarily need docstrings unless complex, particularly short descriptions are acceptable.
 - Do not add a separate docstring to `__init__` when the class docstring documents constructor parameters.
 - Document actual existing behavior, not intended or proposed behavior.
 - Keep documentation concise and non-redundant.
