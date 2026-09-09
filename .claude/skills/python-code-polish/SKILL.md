@@ -1,213 +1,119 @@
-# Python Code Polish
+# Python Typing, Messages, and Code Structure Polish
 
-Polish existing Python code for readability, typing, documentation, comments, and consistency **without changing its logic or behavior**.
+Polish existing Python code by enforcing **complete type hints, standardized exception/log messages, explicit return statements, and clean abstract method structures** without changing runtime behavior or business logic.
 
-## Critical constraint: preserve behavior
+## Critical constraint: preserve code logic and behavior
 
 This is the highest-priority rule.
 
-Do not change:
-
-- algorithms, control flow, conditions, ordering, side effects, or data transformations;
-- APIs, public interfaces, defaults, or exception types;
-- variable, class, function, method, attribute, or parameter names;
-- functionality or validation behavior.
-
-Do not fix bugs, add validation, add error handling, or perform unrelated refactoring.
-
-Only make changes related to:
-
-- type hints;
-- docstrings;
-- comments;
-- exception message wording;
-- explicit final `return` statements;
-- formatting required by those changes.
-
-When in doubt, preserve the existing code.
+- Do **NOT** change algorithms, control flow, conditions, data transformations, or execution order.
+- Do **NOT** change public API signatures, variable names, class names, function names, default argument values, or exception types.
+- Do **NOT** fix bugs, add new validation logic, or rewrite algorithms.
+- Only modify type hints, message wording/formatting, final `return` statements, and `pass` placeholders in abstract methods.
 
 ---
 
-## Type hints
+## Type Hints
 
-Review type hints for consistency and completeness.
+Ensure complete and precise type annotations across all functions and methods.
 
-- Functions and methods should have explicit parameter type hints and return types.
-- `__init__` should use `-> None`.
-- Use precise types when they can be determined reliably from the existing code.
-- Follow the Python version and typing conventions already used by the project.
-- Do not introduce `Any` or speculative types unnecessarily.
-- Do not change runtime behavior to satisfy typing.
-
-Do not make type-hint changes when the intended type cannot be determined confidently.
+- **Completeness:** All parameters and return values must have explicit type hints.
+- **`__init__` Methods:** Must always be annotated with `-> None`.
+- **Modern Syntax:** Use modern Python typing conventions (e.g., `list[str]`, `dict[str, int]`, `float | None`) matching the project's target Python version.
+- **Precision:** Avoid `Any` or speculative types unless strictly necessary or dictated by external dynamic libraries.
+- Do not modify runtime code or add runtime type casting just to satisfy a type checker.
 
 ---
 
-## Return statements
+## Explicit Return Statements
 
-Every function and method should have an explicit return type.
+Every function and method must have a clear and explicit execution exit.
 
-When a function or method does not return a value, use `-> None` and add an explicit `return` at the end:
+- **Explicit Return Types:** Every function/method must declare its return type (e.g., `-> int`, `-> torch.Tensor`, `-> None`).
+- **Final `return` for `-> None`:** Functions and methods that return `None` (including `__init__`) **must end with an explicit `return` statement** on a new line at the very end of the function body:
 
 ```python
-def process_data(data: list[str]) -> None:
-    ...
+def __init__(self, shape: tuple[int, ...], dtype: torch.dtype) -> None:
+    self.shape = shape
+    self.dtype = dtype
+    return
+
+
+def log_status(message: str) -> None:
+    print(f"[INFO] {message}")
     return
 ```
 
-This rule applies **only to the final return statement**. Do not add, remove, move, or modify other `return` statements, as that could change control flow or behavior.
-
-If the function already ends with an explicit `return`, preserve it.
+- **Non-final returns:** Do NOT touch, move, or modify existing internal `return` statements used for early exits or conditional logic.
 
 ---
 
-## Exception messages
+## Abstract Methods
 
-Review existing exception messages in the modified code.
+Abstract methods defined with `@abstractmethod` must use `pass` as their body placeholder.
 
-Messages should:
-
-- start with an uppercase letter;
-- end with a period;
-- clearly and concisely describe the problem;
-- preserve useful context.
-
-If a code identifier appears at the beginning of the message, preserve its original spelling/casing and surround it with single quotes:
+- If an abstract method includes a docstring, place `pass` on a new line immediately following the docstring:
 
 ```python
-raise ValueError("'capacity' must be greater than 0.")
+@abstractmethod
+def contains(self, x: torch.Tensor) -> torch.Tensor:
+    """Check if a batch of elements belongs to the space."""
+    pass
 ```
 
-For interpolated values, use an f-string:
-
-```python
-raise ValueError(
-    f"Tensor shape {x.shape} does not match buffer element shape {self.shape}."
-)
-```
-
-Only modify the text of existing exceptions. Never change exception types, conditions, or semantics.
+- Do not use `Ellipsis` (`...`) or `raise NotImplementedError` in abstract base methods unless specifically required by an external framework pattern.
 
 ---
 
-## Docstrings
+## Messages (Exceptions, Logging, and Prints)
 
-Use concise **NumPy-style docstrings**.
+Standardize all human-readable text strings in `raise` exceptions, `logger` calls, and `print` statements.
 
-### General rules
+### Formatting Rules
 
-- Public classes, functions, and methods should have appropriate docstrings.
-- Private implementation details do not necessarily need docstrings.
-- Do not add a separate docstring to `__init__` when the class docstring documents its constructor parameters.
-- Document existing behavior, not intended or corrected behavior.
-- Avoid redundant or unnecessarily verbose documentation.
-- Do not document implementation details unless they are relevant to the API.
+1. **Capitalization:** Start every message with an uppercase letter.
+2. **Punctuation:** End every message with a period (`.`).
+3. **Identifiers:** Surround variable names, parameter names, or code identifiers with single quotes (e.g., `'tick_size'`). Preserve their exact casing.
+4. **Interpolation:** Always use f-strings for string interpolation.
 
-### Sections
-
-Use only relevant sections:
-
-- `Parameters`
-- `Returns`
-- `Yields`
-- `Raises`
-- `Attributes`
-- `Examples`
-- `Notes`
-- `See Also`
-- `References`
-
-Use standard NumPy formatting:
+### Examples
 
 ```python
-Parameters
-----------
-name : type
-    Description.
+# Incorrect
+raise ValueError("delta must be positive, got " + str(delta))
 
-Returns
--------
-type
-    Description.
-
-Raises
-------
-ValueError
-    Description of when the exception is raised.
+# Correct
+raise ValueError(f"'delta' must be strictly positive. Got {delta}.")
 ```
 
-For optional parameters, use `optional` without unnecessarily documenting the default value:
-
 ```python
-device : torch.device, optional
-    Device on which the data is stored.
+# Incorrect
+raise ValueError("high must be greater than low")
+
+# Correct
+raise ValueError(f"'high' must be greater than 'low'. Got {low} and {high}.")
 ```
 
-Document constructor parameters in the class docstring when appropriate.
-
-### Code references
-
-In docstrings:
-
-- variables, attributes, constants, literals, values, and expressions use double backticks: ``self.size``;
-- classes use `:class:`;
-- methods use `:meth:`;
-- functions use `:func:`.
-
-For example:
-
 ```python
-The buffer is initialized using :func:`torch.get_default_device`.
+# Incorrect
+print("processing batch")
 
-The method behaves consistently with :meth:`RingBuffer.get_all`.
-
-If ``self.size`` is zero, the buffer is empty.
+# Correct
+print("Processing batch.")
 ```
 
 ---
 
-## Comments
-
-Review comments in the modified code.
-
-- Keep comments concise and purposeful.
-- Improve existing comments when they are unclear, inaccurate, or unnecessarily verbose.
-- Add comments only when they provide meaningful context that is not obvious from the code.
-- Prefer explaining **why** something is done rather than restating **what** the code does.
-- Remove redundant comments when they add no useful information.
-- Do not add comments merely to increase documentation coverage.
-
-Comment only when the comment adds clarity that the code itself cannot reasonably provide.
-
-Comments must accurately describe the existing behavior. Do not modify code to make a comment true.
-
----
-
-## Formatting
-
-Keep formatting consistent with the existing project.
-
-Do not reformat unrelated code. Only change formatting when required by the modifications above.
-
----
-
-## Final review
+## Final Review Checklist
 
 Before finishing, verify:
 
-- [ ] Logic and behavior are unchanged.
-- [ ] APIs, defaults, names, and exception types are unchanged.
-- [ ] No unrelated refactoring was performed.
-- [ ] Type hints are complete and reliable.
-- [ ] Functions and methods have explicit return types.
-- [ ] Functions and methods that return nothing have a final explicit `return`.
-- [ ] Existing non-final `return` statements were not changed.
-- [ ] Exception messages start with uppercase letters and end with periods.
-- [ ] Identifiers at the beginning of exception messages preserve their spelling and use single quotes.
-- [ ] Interpolated exception messages use f-strings.
-- [ ] Public APIs have appropriate NumPy-style docstrings.
-- [ ] `__init__` has no redundant docstring.
-- [ ] Docstring code references use the appropriate backtick/Sphinx syntax.
-- [ ] Comments are concise, accurate, and genuinely useful.
-- [ ] No unrelated formatting changes were made.
-- [ ] The final diff contains only changes relevant to this skill.
+- [ ] **Runtime logic is 100% unchanged** (no algorithmic, flow, or API modifications).
+- [ ] Every function and method has full parameter and return type hints.
+- [ ] `__init__` methods are annotated with `-> None`.
+- [ ] Every function/method ending with `-> None` ends with an explicit `return` statement.
+- [ ] Existing internal non-final `return` statements were preserved untouched.
+- [ ] All `@abstractmethod` bodies use `pass`.
+- [ ] Exception, log, and print messages start with a capital letter and end with a period.
+- [ ] Code identifiers inside error/log messages are enclosed in single quotes `'identifier'`.
+- [ ] Dynamic string formatting uses f-strings consistently.
