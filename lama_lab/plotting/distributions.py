@@ -20,46 +20,45 @@ def plot_1d_histogram(
 ) -> Figure:
     """Plot a 1D histogram of data with optional reference intervals.
 
-    Draws a 1D histogram of the provided data. If reference values are
-    provided, a two-panel figure is created (or used) displaying horizontal
-    interval markers directly aligned underneath the x-axis of the histogram.
+    Draws a 1D histogram of the provided data. When reference values are
+    provided, the figure includes a second panel with horizontal interval
+    markers aligned beneath the histogram's x-axis.
 
     Parameters
     ----------
     data : torch.Tensor
-        Data from the distribution to visualize. Expected shape ``(N,)`` or
-        ``(N, 1)``. Must be located on the CPU.
+        Data to visualize with shape ``(N,)`` or ``(N, 1)``. The tensor must
+        be located on the CPU.
     reference_values : torch.Tensor, optional
-        Tensor of shape ``(K, 3)`` containing ``(lower, marker, upper)`` tuples,
-        or ``(K, 2)`` containing ``(lower, upper)`` tuples for each interval to
-        display below the distribution. Must be located on the CPU.
+        Tensor of shape ``(K, 3)`` containing ``(lower, marker, upper)`` tuples
+        or ``(K, 2)`` containing ``(lower, upper)`` tuples. The tensor must be
+        located on the CPU.
     reference_colors : str or list of str, optional
-        Color(s) for the reference intervals. Can be a single color string applied
-        to all intervals, or a list of color strings of length ``K`` to color each
-        interval individually. Defaults to ``"tab:blue"``.
+        Colors for the reference intervals. A single color string applies to all
+        intervals; a list of ``K`` color strings colors them individually.
     hist_range : tuple of float, optional
-        Histogram range for the x-axis ``(min, max)``. Default is ``(0.0, 1.0)``.
+        Histogram range for the x-axis as ``(min, max)``.
     density : bool, optional
-        Whether to normalize the histogram to form a probability density. Default is True.
+        Whether to normalize the histogram to form a probability density.
     bins : int, optional
-        Number of histogram bins. Default is 1000.
+        Number of histogram bins.
     hist_color : str, optional
-        Color of the histogram bars. Default is ``"tab:blue"``.
+        Color of the histogram bars.
     alpha : float, optional
-        Transparency of the histogram bars. Default is 0.75.
+        Transparency of the histogram bars.
     title : str, optional
-        Title of the plot. Default is ``"1D Histogram"``.
+        Title of the plot.
     xlabel : str, optional
-        Label for the x-axis. Default is ``"Value"``.
+        Label for the x-axis.
     figsize : tuple of float, optional
-        Figure size used when ``axes`` is not provided. Default is ``(8, 5)``.
-    axes : list of matplotlib.axes.Axes, optional
-        Axes to draw into. Pass ``[ax]`` for a single histogram plot, or
+        Figure size used when ``axes`` is not provided.
+    axes : list of Axes, optional
+        Axes to draw into. Use ``[ax]`` for a single histogram or
         ``[ax_hist, ax_ref]`` when reference values are shown.
 
     Returns
     -------
-    fig : matplotlib.figure.Figure
+    fig : Figure
         Figure containing the plotted distribution and optional intervals.
 
     Raises
@@ -69,10 +68,10 @@ def plot_1d_histogram(
         2 with intervals), if ``reference_values`` does not have shape ``(K, 2)``
         or ``(K, 3)``, or if ``reference_colors`` length does not match ``K``.
     """
-    # Flattens (N, 1) to (N,) if necessary
+    # Reduce the optional singleton feature dimension for histogram input
     data_flat = data.squeeze()
 
-    # Axes Layout Resolution
+    # Axes layout resolution
     if axes is None:
         if reference_values is None:
             fig, ax_hist = plt.subplots(figsize=figsize, layout="constrained")
@@ -93,19 +92,19 @@ def plot_1d_histogram(
         if reference_values is None:
             if len(axes) != 1:
                 raise ValueError(
-                    "axes must contain exactly one Axes object when reference_values is None."
+                    "'axes' must contain exactly one Axes object when 'reference_values' is None."
                 )
             ax_hist = axes[0]
             ax_ref = None
         else:
             if len(axes) != 2:
                 raise ValueError(
-                    "axes must contain exactly two Axes objects when reference_values is provided."
+                    "'axes' must contain exactly two Axes objects when 'reference_values' is provided."
                 )
             ax_hist, ax_ref = axes
         fig = ax_hist.figure
 
-    # Plot Main Histogram
+    # Plot main histogram
     y_label = "Density" if density else "Count"
 
     ax_hist.hist(
@@ -120,20 +119,20 @@ def plot_1d_histogram(
     ax_hist.set_ylabel(y_label)
     ax_hist.grid(True, linestyle="--", alpha=0.7)
 
-    # Single Panel Early Return
+    # Single panel early return
     if reference_values is None:
         ax_hist.set_xlabel(xlabel)
         return fig
 
-    # Validate & Process Reference Intervals (Panel 2)
+    # Validate & process reference intervals (Panel 2)
     if reference_values.ndim != 2 or reference_values.shape[-1] not in (2, 3):
         raise ValueError(
-            f"reference_values must have shape (K, 2) or (K, 3), got {reference_values.shape}."
+            f"'reference_values' must have shape (K, 2) or (K, 3). Got {reference_values.shape}."
         )
 
     k_refs = len(reference_values)
 
-    # Resolve Colors
+    # Resolve colors
     if reference_colors is None:
         colors = [hist_color] * k_refs
     elif isinstance(reference_colors, str):
@@ -142,7 +141,7 @@ def plot_1d_histogram(
         colors = reference_colors
     else:
         raise ValueError(
-            f"Length of reference_colors ({len(reference_colors)}) must match "
+            f"Length of 'reference_colors' ({len(reference_colors)}) must match "
             f"the number of reference values ({k_refs})."
         )
 
@@ -220,22 +219,22 @@ def plot_2d_histogram(
 ) -> Figure:
     """Plot a 2D histogram of continuous features for single or multiple groups.
 
-    This function handles both multi-agent data (e.g., actions per agent) and
-    aggregated single-group data (e.g., dispersion).
+    Accepts either multi-group data, such as actions per agent, or aggregated
+    single-group data, such as dispersion.
 
     Parameters
     ----------
     data : torch.Tensor
-        Tensor of shape ``(N, n_groups, 2)`` or ``(N, 2)``. If ``(N, 2)`` is provided,
-        it is treated as a single group (``n_groups = 1``). Expected to be on the CPU.
+        Tensor of shape ``(N, n_groups, 2)`` or ``(N, 2)``. A tensor with shape
+        ``(N, 2)`` is treated as a single group. The tensor must be on the CPU.
     reference_values : torch.Tensor, optional
         Tensor of shape ``(K, 2)`` containing reference points to plot as markers.
     reference_colors : str or list of str, optional
-        Color(s) for the reference markers. Can be a single color string applied to all,
-        or a list of colors of length ``K`` to color each point differently.
+        Colors for the reference markers. A single color string applies to all
+        points; a list of ``K`` colors assigns them individually.
     subplot_titles : list of str, optional
-        Titles for each subplot. If None and ``n_groups > 1``, defaults to
-        ``["Agent_0", "Agent_1", ...]``. If ``n_groups == 1``, this is ignored.
+        Titles for each subplot. When omitted for multiple groups, titles use the
+        ``"Agent_i"`` naming pattern. The value is ignored for a single group.
     feature_names : tuple of (str, str), optional
         Names of the two dimensions used as axis labels.
     hist_range : tuple of float or tuple of tuples, optional
@@ -248,7 +247,7 @@ def plot_2d_histogram(
     cmap : str, optional
         Colormap used for the 2D histogram.
     show_origin : bool, optional
-        If True, draws dashed lines at x=0 and y=0 (useful for dispersion plots).
+        Whether to draw dashed lines at ``x = 0`` and ``y = 0``.
     title : str, optional
         Base title of the plot.
     nrows : int, optional
@@ -256,14 +255,14 @@ def plot_2d_histogram(
     ncols : int, optional
         Number of subplot columns used when ``axes`` is not provided.
     figsize : tuple of float, optional
-        Figure size. If None, defaults to ``(18, 8)`` for multi-group data,
-        and ``(8, 8)`` for single-group data.
-    axes : list of matplotlib.axes.Axes, optional
+        Figure size. When omitted, uses ``(18, 8)`` for multiple groups and
+        ``(8, 8)`` for a single group.
+    axes : list of Axes, optional
         Axes to draw into. Provide one axis per group.
 
     Returns
     -------
-    fig : matplotlib.figure.Figure
+    fig : Figure
         Figure containing the plotted 2D histograms.
 
     Raises
@@ -271,29 +270,29 @@ def plot_2d_histogram(
     ValueError
         If the shape of ``data`` is invalid, or if list lengths don't match.
     """
-    # Input Normalization
+    # Input normalization
     if data.ndim == 2 and data.shape[-1] == 2:
         data = data.unsqueeze(1)
     elif data.ndim != 3 or data.shape[-1] != 2:
         raise ValueError(
-            f"data must have shape (N, 2) or (N, n_groups, 2). Got {data.shape}."
+            f"'data' must have shape (N, 2) or (N, n_groups, 2). Got {data.shape}."
         )
 
     _, n_groups, _ = data.shape
 
-    # Setup Defaults for Metadata
+    # Setup defaults for metadata
     if n_groups > 1:
         if subplot_titles is None:
             subplot_titles = [f"Agent_{i}" for i in range(n_groups)]
         elif len(subplot_titles) != n_groups:
-            raise ValueError("Length of subplot_titles must match number of groups.")
+            raise ValueError("Length of 'subplot_titles' must match number of groups.")
     else:
         subplot_titles = [title] if subplot_titles is None else subplot_titles
 
     if figsize is None:
         figsize = (8, 8) if n_groups == 1 else (18, 8)
 
-    # Histogram Range Processing
+    # Histogram range processing
     if hist_range is not None and isinstance(hist_range[0], (int, float)):
         hist_range_2d = [hist_range, hist_range]
     else:
@@ -301,7 +300,7 @@ def plot_2d_histogram(
 
     cbar_label = "Density" if density else "Count"
 
-    # Axes Setup
+    # Axes setup
     if axes is None:
         if ncols is None:
             ncols = -(-n_groups // nrows)
@@ -314,10 +313,10 @@ def plot_2d_histogram(
         axes = created_axes.flatten()
     else:
         if len(axes) < n_groups:
-            raise ValueError("Not enough axes provided for the number of groups.")
+            raise ValueError("Not enough 'axes' provided for the number of groups.")
         fig = axes[0].figure
 
-    # Reference Colors Processing
+    # Reference colors processing
     if reference_values is not None:
         k_refs = reference_values.shape[0]
         if isinstance(reference_colors, str):
@@ -325,11 +324,11 @@ def plot_2d_histogram(
         else:
             if len(reference_colors) != k_refs:
                 raise ValueError(
-                    "Length of reference_colors must match number of reference points."
+                    "Length of 'reference_colors' must match number of reference points."
                 )
             c_refs = reference_colors
 
-    # Plotting Loop
+    # Plotting loop
     for i in range(n_groups):
         ax = axes[i]
         points = data[:, i, :]

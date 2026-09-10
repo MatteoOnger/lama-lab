@@ -27,32 +27,33 @@ def plot_history(
     Parameters
     ----------
     feature_dim : int
-        The explicit number of feature dimensions to plot (e.g., 1 for scalars like
-        Rewards, 2 for 2D coordinates).
+        Number of feature dimensions to plot, such as ``1`` for scalar rewards
+        or ``2`` for coordinates.
     mean_history : torch.Tensor
-        Tensor of shape ``(n_rounds, n_agents, feature_dim)`` containing mean values.
-        If ``feature_dim == 1``, shape ``(n_rounds, n_agents)`` is also accepted.
-        Expected to be located on the CPU.
+        Tensor of shape ``(n_rounds, n_agents, feature_dim)`` containing mean
+        values. When ``feature_dim == 1``, shape ``(n_rounds, n_agents)`` is
+        also accepted. The tensor must be on the CPU.
     min_history : torch.Tensor, optional
-        Tensor containing minimum values. Shape must match ``mean_history``.
-        Expected to be located on the CPU.
+        Tensor containing minimum values with the same shape as ``mean_history``.
+        The tensor must be on the CPU.
     max_history : torch.Tensor, optional
-        Tensor containing maximum values. Shape must match ``mean_history``.
-        Expected to be located on the CPU.
+        Tensor containing maximum values with the same shape as ``mean_history``.
+        The tensor must be on the CPU.
     std_history : torch.Tensor, optional
-        Tensor containing standard deviations. Shape must match ``mean_history``.
-        Expected to be located on the CPU.
+        Tensor containing standard deviations with the same shape as
+        ``mean_history``. The tensor must be on the CPU.
     reference_values : torch.Tensor, optional
-        Tensor of shape ``(K, feature_dim)`` containing reference values (e.g. Nash Equilibria)
-        to draw as fixed horizontal lines. If ``feature_dim == 1``, ``(K,)`` is accepted.
-        Expected to be located on the CPU.
+        Tensor of shape ``(K, feature_dim)`` containing reference values, such as
+        Nash equilibria, to draw as fixed horizontal lines. When
+        ``feature_dim == 1``, shape ``(K,)`` is also accepted. The tensor must
+        be on the CPU.
     agent_names : list of str, optional
-        Names of the agents. If None, defaults to ``["Agent_0", "Agent_1", ...]``.
+        Names of the agents. When omitted, names use the ``"Agent_i"`` pattern.
     feature_names : list of str, optional
-        Names of the dimensions. Defaults to ``["Metric"]`` for 1D, or
-        ``["Dim 0", "Dim 1", ...]`` for multi-dimensional data.
+        Names of the dimensions. When omitted, uses ``"Metric"`` for one
+        dimension or the ``"Dim i"`` pattern for multiple dimensions.
     feature_colors : list of str, optional
-        Colors for each dimension. If None, uses matplotlib's default color cycle.
+        Colors for each dimension. When omitted, uses Matplotlib's default cycle.
     start_step : int, optional
         First time step index for the x-axis.
     nrows : int, optional
@@ -65,12 +66,12 @@ def plot_history(
         Prefix for the subplot titles.
     figsize : tuple of float, optional
         Figure size used when ``axes`` is not provided.
-    axes : list of matplotlib.axes.Axes, optional
+    axes : list of Axes, optional
         Axes to draw into. Provide one axis per agent.
 
     Returns
     -------
-    fig : matplotlib.figure.Figure
+    fig : Figure
         Figure containing the plotted history.
 
     Raises
@@ -78,14 +79,14 @@ def plot_history(
     ValueError
         If tensor shapes do not match the explicitly provided ``feature_dim``.
     """
-    # Input Normalization & Validation
+    # Normalize the scalar-feature representation before plotting.
     if mean_history.ndim == 2 and feature_dim == 1:
         mean_history = mean_history.unsqueeze(-1)
 
     if mean_history.ndim != 3 or mean_history.shape[-1] != feature_dim:
         raise ValueError(
-            f"mean_history shape {mean_history.shape} does not match "
-            f"expected feature_dim={feature_dim}."
+            f"'mean_history' shape {mean_history.shape} does not match "
+            f"expected 'feature_dim' ({feature_dim})."
         )
 
     n_rounds, n_agents, _ = mean_history.shape
@@ -103,11 +104,11 @@ def plot_history(
     if reference_values is not None and reference_values.ndim == 1 and feature_dim == 1:
         reference_values = reference_values.unsqueeze(-1)
 
-    # Setup Defaults for Metadata
+    # Setup defaults for metadata
     if agent_names is None:
         agent_names = [f"Agent_{i}" for i in range(n_agents)]
     elif len(agent_names) != n_agents:
-        raise ValueError("Length of agent_names must match number of agents.")
+        raise ValueError("Length of 'agent_names' must match number of agents.")
 
     if feature_names is None:
         if feature_dim == 1:
@@ -115,15 +116,15 @@ def plot_history(
         else:
             feature_names = [f"Dim {d}" for d in range(feature_dim)]
     elif len(feature_names) != feature_dim:
-        raise ValueError("Length of feature_names must match feature_dim.")
+        raise ValueError("Length of 'feature_names' must match 'feature_dim'.")
 
     if feature_colors is None:
         prop_cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
         feature_colors = [prop_cycle[i % len(prop_cycle)] for i in range(feature_dim)]
     elif len(feature_colors) != feature_dim:
-        raise ValueError("Length of feature_colors must match feature_dim.")
+        raise ValueError("Length of 'feature_colors' must match 'feature_dim'.")
 
-    # Axes Setup
+    # Axes setup
     if axes is None:
         if ncols is None:
             ncols = -(-n_agents // nrows)
@@ -138,9 +139,9 @@ def plot_history(
         fig = axes[0].figure
 
     if len(axes) < n_agents:
-        raise ValueError("Not enough axes provided for the number of agents.")
+        raise ValueError("Not enough 'axes' provided for the number of agents.")
 
-    # Plotting Loop
+    # Plotting loop
     handles = []
     labels = []
 
@@ -207,7 +208,7 @@ def plot_history(
         if i == 0:
             handles, labels = ax.get_legend_handles_labels()
 
-    # Deduplicate Legend and Finalize
+    # Deduplicate legend and finalize
     unique_labels = dict(zip(labels, handles))
     ncol_labels = (
         (mean_history is not None)
