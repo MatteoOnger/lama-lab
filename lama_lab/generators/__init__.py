@@ -1,6 +1,6 @@
 """Module for generating data."""
 
-from .base import BaseGenerator
+from .generator import Generator
 from .gaussian_mixture import GaussianMixtureGenerator
 
-__all__ = ["BaseGenerator", "GaussianMixtureGenerator"]
+__all__ = ["Generator", "GaussianMixtureGenerator"]

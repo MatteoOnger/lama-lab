@@ -1,9 +1,9 @@
 import torch
 
-from .base import BaseGenerator
+from .generator import Generator
 
 
-class GaussianMixtureGenerator(BaseGenerator):
+class GaussianMixtureGenerator(Generator):
     """Generate samples from a Gaussian mixture distribution.
 
     Parameters
@@ -27,7 +27,7 @@ class GaussianMixtureGenerator(BaseGenerator):
         stds: list[float],
         low: float,
         high: float,
-    ):
+    ) -> None:
         self.weights = torch.as_tensor(weights)
         self.means = torch.as_tensor(means)
         self.stds = torch.as_tensor(stds)
@@ -36,6 +36,19 @@ class GaussianMixtureGenerator(BaseGenerator):
         return
 
     def generate(self, n_samples: int) -> torch.Tensor:
+        """Generate samples from the Gaussian mixture distribution.
+
+        Parameters
+        ----------
+        n_samples : int
+            Number of samples to draw.
+
+        Returns
+        -------
+        samples : torch.Tensor
+            A tensor of shape ``(n_samples,)`` containing the generated values,
+            clamped to the range ``[self.low, self.high]``.
+        """
         sampled_indices = torch.multinomial(
             self.weights, num_samples=n_samples, replacement=True
         )

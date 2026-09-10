@@ -1,0 +1,26 @@
+from abc import ABC, abstractmethod
+
+import torch
+
+
+class Generator(ABC):
+    """Abstract base class for data generators.
+
+    Subclasses define how to generate samples from a specific distribution or data source.
+    """
+
+    @abstractmethod
+    def generate(self, n_samples: int) -> torch.Tensor:
+        """Generate ``n_samples`` samples.
+
+        Parameters
+        ----------
+        n_samples : int
+            Number of samples to draw.
+
+        Returns
+        -------
+        samples : torch.Tensor
+            A tensor containing the generated values.
+        """
+        pass
