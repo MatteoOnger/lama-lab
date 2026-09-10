@@ -1,17 +1,17 @@
 import torch
 
-from ..generators import BaseGenerator
+from ..generators import Generator
 
 
 class MarketMakingEnvironment:
-    """Market-making environment with batched independent episodes.
+    """Market-making environment for batched independent episodes.
 
     At each round, every market maker submits a bid and an ask quote. A latent
-    true value is sampled for each episode, and a trader executes against the
-    quote (bid or ask) that provides the highest utility. If multiple makers
-    offer the same best price, the trade is split equally among them. Each
-    selected maker receives a reward equal to its profit from the trade divided
-    by the number of selected makers.
+    true value is sampled for each episode, and a trader executes on the side
+    whose best quote has the smaller gap to that value. If the bid and ask gaps
+    are within epsilon, the side is selected randomly. When multiple makers
+    offer the selected best quote, the trade is split equally among them and
+    each selected maker receives its share of the corresponding price gap.
 
     Parameters
     ----------
@@ -21,7 +21,7 @@ class MarketMakingEnvironment:
         Number of independent episodes to process in a batch.
     n_rounds : int
         Total number of rounds to simulate.
-    generator_v : BaseGenerator
+    generator_v : Generator
         Generator used to sample the latent true values.
     epsilon : float, optional
         Numerical tolerance used when comparing prices and selecting the best
@@ -35,9 +35,9 @@ class MarketMakingEnvironment:
     Notes
     -----
     The environment supports batched execution: multiple independent episodes
-    are simulated simultaneously by operating on tensors of shape ``(n_episodes, ...)``.
-    Episodes do not interact with one another, enabling efficient parallel simulation
-    with vectorized PyTorch operations.
+    are simulated simultaneously using tensors whose leading dimension is
+    ``n_episodes``. Episodes do not interact with one another, enabling efficient
+    parallel simulation with vectorized PyTorch operations.
     """
 
     def __init__(
@@ -45,9 +45,9 @@ class MarketMakingEnvironment:
         n_makers: int,
         n_episodes: int,
         n_rounds: int,
-        generator_v: BaseGenerator,
+        generator_v: Generator,
         epsilon: float = 1e-8,
-    ):
+    ) -> None:
         self.n_makers = n_makers
         self.n_episodes = n_episodes
         self.n_rounds = n_rounds
@@ -68,13 +68,13 @@ class MarketMakingEnvironment:
         Parameters
         ----------
         actions : torch.Tensor
-            Tensor of shape ``(n_episodes, n_makers, 2)`` containing the bid
+            Tensor of shape (n_episodes, n_makers, 2) containing the bid
             and ask quotes submitted by each maker for each episode.
 
         Returns
         -------
         rewards : torch.Tensor
-            Tensor of shape ``(n_episodes, n_makers)`` containing the reward
+            Tensor of shape (n_episodes, n_makers) containing the reward
             assigned to each maker for the current round.
 
         Raises
@@ -100,43 +100,43 @@ class MarketMakingEnvironment:
         best_bid = actions[:, :, 0].amax(dim=1)
         best_ask = actions[:, :, 1].amin(dim=1)
 
-        # Price gaps relative to the true value
+        # Measure each side's distance from the sampled true value
         bid_gap = true_values - best_bid
         ask_gap = best_ask - true_values
 
-        # Trader's choice
+        # Prefer the smaller gap and randomize only numerically indistinguishable ties
         trader_prefers_ask = torch.randint(
             0, 2, (self.n_episodes,), dtype=torch.bool, device=actions.device
         )
         trader_prefers_ask[bid_gap > ask_gap + self.epsilon] = True
         trader_prefers_ask[ask_gap > bid_gap + self.epsilon] = False
 
-        # Prices offered on the chosen side
+        # Select each maker's quote on the side chosen by the trader
         chosen_side_prices = torch.where(
             trader_prefers_ask[:, None],
             actions[:, :, 1],
             actions[:, :, 0],
         )
 
-        # Best price available to the trader
+        # Select the best quote on the chosen side
         chosen_price = torch.where(trader_prefers_ask, best_ask, best_bid)
 
-        # Makers offering the chosen price
+        # Identify all makers whose quotes match the selected best quote
         selected_maker_indices = torch.where(
             torch.abs(chosen_side_prices - chosen_price[:, None]) < self.epsilon
         )
 
-        # Makers chosen per episode
+        # Count tied makers so the trade can be divided evenly
         n_selected_makers = torch.bincount(
             selected_maker_indices[0].reshape(-1), minlength=self.n_episodes
         )
 
-        # Reward for each selected episode
+        # Divide each episode's price gap among its selected makers
         reward_per_episode = (
             torch.where(trader_prefers_ask, ask_gap, bid_gap) / n_selected_makers
         )
 
-        # Assign rewards to the selected makers
+        # Write each episode's shared reward to its selected makers
         rewards = torch.zeros(
             (self.n_episodes, self.n_makers),
             device=actions.device,
