@@ -220,6 +220,11 @@ class ExperimentManager:
 
         If a value is a dictionary containing complex objects (like Tensors), a
         subdirectory is created and its contents are saved recursively.
+
+        Parameters
+        ----------
+        artifacts : dict of str to Any
+            Dictionary containing the artifacts to save.
         """
         for name, obj in artifacts.items():
             if isinstance(obj, dict):
