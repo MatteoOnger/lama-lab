@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+
 import torch
 
 
@@ -11,6 +12,11 @@ class Space(ABC):
         The shape of a single element belonging to this space.
     dtype : torch.dtype
         The data type of the elements in this space.
+
+    Attributes
+    ----------
+    ndim : int
+        Number of dimensions in the space, exposed as a property.
     """
 
     def __init__(self, shape: tuple[int, ...], dtype: torch.dtype) -> None:
@@ -20,13 +26,7 @@ class Space(ABC):
 
     @property
     def ndim(self) -> int:
-        """Number of dimensions of a single element in the space.
-
-        Returns
-        -------
-        ndim : int
-            The length of the ``shape`` tuple.
-        """
+        """Number of dimensions of a single element in the space."""
         return len(self.shape)
 
     @abstractmethod
@@ -79,6 +79,12 @@ class ContinuousSpace(Space):
         Lower bound for the space elements.
     high : float
         Upper bound for the space elements.
+
+    Attributes
+    ----------
+    ndim : int
+        Number of dimensions of a single element (inherited from
+        :class:`Space`).
     """
 
     def __init__(
@@ -99,13 +105,21 @@ class DiscreteSpace(Space):
         The shape of a single element belonging to this space.
     dtype : torch.dtype
         The data type of the elements in this space.
-    n : int
+    num_elements : int
         The total number of valid discrete elements in the space.
+
+    Attributes
+    ----------
+    ndim : int
+        Number of dimensions of a single element (inherited from
+        :class:`Space`).
     """
 
-    def __init__(self, shape: tuple[int, ...], dtype: torch.dtype, n: int) -> None:
+    def __init__(
+        self, shape: tuple[int, ...], dtype: torch.dtype, num_elements: int
+    ) -> None:
         super().__init__(shape, dtype)
-        self.n = n
+        self.num_elements = num_elements
         return
 
     @abstractmethod
@@ -116,7 +130,7 @@ class DiscreteSpace(Space):
         ----------
         indices : torch.Tensor
             1D tensor of shape ``(N,)`` containing discrete indices. Each index
-            must be in the range ``[0, self.n - 1]``.
+            must be in the range ``[0, self.num_elements - 1]``.
 
         Returns
         -------
@@ -144,3 +158,7 @@ class DiscreteSpace(Space):
     def __getitem__(self, indices: torch.Tensor) -> torch.Tensor:
         """Wrapper around :meth:`DiscreteSpace.from_indices`."""
         return self.from_indices(indices)
+
+    def __len__(self) -> int:
+        """Return the total number of discrete elements in the space."""
+        return self.num_elements

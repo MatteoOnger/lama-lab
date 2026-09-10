@@ -125,6 +125,7 @@ Review and refine inline comments in the code.
 - Remove redundant, obvious, or outdated comments.
 - Do not add comments merely to increase documentation lines.
 - Comments must accurately reflect the code. Do not alter executable code to match a comment.
+- It is not necessary to end comments with a period.
 
 ---
 
