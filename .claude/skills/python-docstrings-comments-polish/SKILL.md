@@ -1,3 +1,8 @@
+---
+name: python-docstrings-comments-polish
+description: Polish docstrings and inline comments in existing Python code (NumPy-style docstrings, plain-text code references, purposeful comments) without changing any logic. Use when the user asks to improve, clean up, document, or comment existing Python code, or to review/fix docstrings, without altering behavior.
+---
+
 # Python Docstrings and Comments Polish
 
 Polish existing Python code by improving **docstrings and inline comments** for clarity, accuracy, and completeness **without modifying any executable code or logic**.
@@ -47,15 +52,15 @@ class DiscreteMMActionSpace(DiscreteSpace):
     Attributes
     ----------
     shape : tuple of int
-        The shape of a single physical element (inherited from :class:`Space`).
+        The shape of a single physical element (inherited from Space).
     dtype : torch.dtype
-        The data type of the physical elements (inherited from :class:`Space`).
+        The data type of the physical elements (inherited from Space).
     ndim : int
-        Number of dimensions of a single element (inherited from :class:`Space`).
+        Number of dimensions of a single element (inherited from Space).
     num_elements : int
-        Total number of valid discrete actions (inherited from :class:`DiscreteSpace`).
+        Total number of valid discrete actions (inherited from DiscreteSpace).
     values : torch.Tensor
-        Tensor containing all valid action pairs (inherited from :class:`DiscreteSpace`).
+        Tensor containing all valid action pairs (inherited from DiscreteSpace).
     """
 ```
 
@@ -105,14 +110,13 @@ indices : torch.Tensor
     1D tensor containing the mapped discrete indices.
 ```
 
-### Code references (Sphinx syntax)
+### Code references (plain text, no Sphinx markup)
 
-Within docstrings, use explicit Sphinx cross-referencing markup:
+Within docstrings, refer to code elements as plain text, exactly as they appear in the code (i.e., as imported or defined) — no backticks, double backticks, or Sphinx roles.
 
-- Variables, attributes, literals, and values use double backticks: ``self.size`` or ``None``.
-- Classes use `:class:`, e.g., `:class:`Space``.
-- Methods use `:meth:`, e.g., `:meth:`DiscreteSpace.from_indices``.
-- Functions use `:func:`, e.g., `:func:`torch.clamp``.
+- Do **not** use double backticks for variables, attributes, literals, or values: write `self.size` or `None`, not ``self.size`` or ``None``.
+- Do **not** use `:class:`, `:meth:`, or `:func:` roles: write `Space`, `DiscreteSpace.from_indices`, or `torch.clamp` as plain text, not `:class:`Space``, `:meth:`DiscreteSpace.from_indices``, or `:func:`torch.clamp``.
+- Types, classes, methods, and functions are all written the same way: as plain dotted names (e.g., `torch.device`, `DiscreteSpace`, `numpy.ndarray`), matching how they'd be referenced in code.
 
 ---
 
@@ -121,11 +125,12 @@ Within docstrings, use explicit Sphinx cross-referencing markup:
 Review and refine inline comments in the code.
 
 - Keep comments concise, accurate, and purposeful.
-- Explain **why** something is done (intent/math/design reason) rather than restating **what** the code does.
+- Explain **why** something is done (intent/math/design reason), or clarify a step that isn't obvious from reading the code, rather than restating **what** the code does line by line.
+- Use comments to divide a function, method, or class body into logical sections when it contains multiple distinct blocks of work (e.g., `# Setup defaults`, `# Axes setup`, `# Plotting loop`, `# Deduplicate legend and finalize`). This is especially useful in longer functions where the structure isn't otherwise obvious at a glance.
 - Remove redundant, obvious, or outdated comments.
 - Do not add comments merely to increase documentation lines.
 - Comments must accurately reflect the code. Do not alter executable code to match a comment.
-- It is not necessary to end comments with a period.
+- Style: start each comment with a capital letter; do not end it with a period.
 
 ---
 
@@ -141,5 +146,7 @@ Before presenting the output, verify:
 - [ ] Optional parameters use `, optional` without explicitly stating `None` in the type notation.
 - [ ] Default values in docstrings are omitted unless non-obvious or vital for context.
 - [ ] The `Returns` section uses names only when helpful; trivial/self-explanatory returns use type-only notation.
-- [ ] Cross-references use Sphinx syntax (`:class:`, `:meth:`, `:func:`, ``code``).
-- [ ] Inline comments explain "why" instead of "what" and noise has been removed.
+- [ ] Code references are plain text (e.g., `torch.device`, `Space`) with **no** double backticks and **no** Sphinx roles (`:class:`, `:meth:`, `:func:`).
+- [ ] Inline comments explain "why" or clarify non-obvious steps instead of restating "what", and noise has been removed.
+- [ ] Longer functions/classes with distinct logical blocks use section-dividing comments.
+- [ ] Comments start with a capital letter and have no trailing period.

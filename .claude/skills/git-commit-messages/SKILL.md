@@ -1,3 +1,8 @@
+---
+name: git-commit-messages
+description: Write clear, accurate Git commit messages in Conventional Commits format based on the actual diff (staged or unstaged changes), never inventing intent, scope, or changes not present in the diff. Use when the user asks for a commit message, asks to describe staged/unstaged changes, or asks to commit changes with a proper message.
+---
+
 # Git Commit Messages
 
 Create clear, concise, and accurate Git commit messages based on the actual changes in the working tree or staged diff.

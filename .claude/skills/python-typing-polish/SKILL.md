@@ -1,3 +1,8 @@
+---
+name: python-typing-polish
+description: Polish existing Python code by enforcing complete type hints, standardized exception/log/print messages, explicit return statements, and clean abstract method structures, without changing runtime behavior or business logic. Use when the user asks to add/complete type hints, standardize error or log messages, add explicit returns, or clean up abstract method bodies in existing Python code.
+---
+
 # Python Typing, Messages, and Code Structure Polish
 
 Polish existing Python code by enforcing **complete type hints, standardized exception/log messages, explicit return statements, and clean abstract method structures** without changing runtime behavior or business logic.
@@ -69,7 +74,18 @@ def contains(self, x: torch.Tensor) -> torch.Tensor:
 
 Standardize all human-readable text strings in `raise` exceptions, `logger` calls, and `print` statements.
 
+### Caution with log messages
+
+Log messages are more likely than exceptions or prints to follow an intentional, non-prose format — e.g., structured/key-value logging (`event=order_filled qty=10`), machine-parsed formats, templates with trailing placeholders, or a deliberate lowercase/no-punctuation convention used consistently across the codebase.
+
+- Before applying the formatting rules below to a `logger` call, look at the surrounding log calls to infer the intended format.
+- If a log message clearly follows a consistent structured or stylistic convention (even if it differs from the rules below, e.g. no trailing period, lowercase start, no quotes around identifiers), preserve and reinforce that convention rather than overriding it with the rigid rules.
+- If a log message just contains a lazy human-readable sentence with no evident structure or convention to protect, standardize it normally per the rules below.
+- When unsure whether a deviation is intentional, err toward leaving the message closer to its original form and improving it only within the style it already follows, rather than forcing the rigid rules.
+
 ### Formatting Rules
+
+The rules below apply directly to exceptions and prints, and to log messages that are plain human-readable sentences with no other convention to preserve (see above).
 
 1. **Capitalization:** Start every message with an uppercase letter.
 2. **Punctuation:** End every message with a period (`.`).
@@ -114,6 +130,7 @@ Before finishing, verify:
 - [ ] Every function/method ending with `-> None` ends with an explicit `return` statement.
 - [ ] Existing internal non-final `return` statements were preserved untouched.
 - [ ] All `@abstractmethod` bodies use `pass`.
-- [ ] Exception, log, and print messages start with a capital letter and end with a period.
+- [ ] Exception and print messages, and log messages with no structured/stylistic convention to preserve, start with a capital letter and end with a period.
+- [ ] Log messages following an intentional structured or stylistic convention were preserved and reinforced rather than forced into the rigid formatting rules.
 - [ ] Code identifiers inside error/log messages are enclosed in single quotes `'identifier'`.
 - [ ] Dynamic string formatting uses f-strings consistently.
