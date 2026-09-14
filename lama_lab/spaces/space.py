@@ -1,3 +1,4 @@
+import math
 from abc import ABC, abstractmethod
 
 import torch
@@ -26,8 +27,13 @@ class Space(ABC):
 
     @property
     def ndim(self) -> int:
-        """Number of dimensions of a single element in the space."""
+        """Number of axes in the shape of a single element, not its size."""
         return len(self.shape)
+
+    @property
+    def numel(self) -> int:
+        """Total number of scalar elements in a single sample."""
+        return math.prod(self.shape)
 
     @abstractmethod
     def contains(self, x: torch.Tensor) -> torch.Tensor:
