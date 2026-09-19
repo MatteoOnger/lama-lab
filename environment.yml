@@ -15,5 +15,6 @@ dependencies:
   - numpy
   - pytest
   - pytorch
+  - pyyaml
   - scipy>=1.18.0
   - pip
