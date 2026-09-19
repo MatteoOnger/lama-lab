@@ -19,25 +19,75 @@ Each round costs O(n_arms^3) per episode (Blum-Mansour solves one stationary
 distribution per episode), so keep the grid coarse and n_episodes modest; the
 defaults mirror configs/market_making/blum_1fp.yml.
 
+Every learning rate is an independent run, so on a CPU-only machine they are
+run in separate processes (``--jobs``, default: one per logical core). Torch's
+own intra-op threading does not help this workload (the per-round tensors are
+tiny; measured on an 8-core i7, 8 threads in one process was slower than 1)
+and each worker pins itself to a single thread to avoid oversubscription.
+
 Usage
 -----
     python scripts/eta_sweep.py
     python scripts/eta_sweep.py --etas 1e-4 3e-4 1e-3 3e-3 1e-2 --rounds 50000
+    python scripts/eta_sweep.py --jobs 1  # disable multiprocessing
 """
 
 import argparse
 import math
+import os
 import traceback
+from concurrent.futures import ProcessPoolExecutor
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import torch
 
 import lama_lab.analysis as analysis
 from lama_lab.generators import GaussianMixtureGenerator
-from lama_lab.utils import ResultsManager, run_symmetric_duel, setup_logger
+from lama_lab.utils import ExperimentManager, ResultsManager, run_symmetric_duel, setup_logger
 
 # Disable interactive plotting mode to optimize memory usage
 plt.ioff()
+
+# Matches the manuscript's Libertine/newtxmath fonts. Figures are meant to be
+# placed two to a column (roughly a quarter-page each once printed), hence the
+# large base font size relative to the small figsize used below.
+mpl.rcParams.update(
+    {
+        "font.size": 12,
+        "text.usetex": True,
+        "text.latex.preamble": r"""
+            \usepackage{libertine}
+            \usepackage[libertine]{newtxmath}
+        """,
+        "axes.linewidth": 0.4,
+        "lines.linewidth": 1.5,
+        "lines.markersize": 3.5,
+        "xtick.direction": "in",
+        "ytick.direction": "in",
+        "xtick.minor.visible": False,
+        "ytick.minor.visible": False,
+        "xtick.major.width": 0.4,
+        "ytick.major.width": 0.4,
+        "grid.linewidth": 0.2,
+        "axes.grid": True,
+        "grid.linestyle": "--",
+        "savefig.pad_inches": 0.02,
+    }
+)
+
+# MATLAB/pgfplots default color order, close to but distinct from matplotlib's
+# own tab: palette.
+COLOR_BID = "#0072BD"
+COLOR_ASK = "#D95319"
+COLOR_SPREAD = "#7E2F8E"
+
+# Roughly half an ACM two-column's ~3.33in column width, since two of these
+# are meant to sit side by side within one column. No legend is drawn (there
+# is no room for one at this size and font); color code in the caption as
+# blue = bid, orange = ask, purple = spread, dotted = continuous Nash
+# reference, star = the analytically optimal eta.
+FIGSIZE = (3, 3)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 torch.set_default_device(device)
@@ -71,79 +121,115 @@ def build_agent_cfg(arms: torch.Tensor, reward_range: tuple, eta: float) -> dict
     }
 
 
+def run_one_eta(task: dict) -> dict:
+    """Worker entry point: learn the equilibrium for one eta.
+
+    Runs in its own process (see ``main``), so it only takes plain,
+    picklable arguments and rebuilds everything it needs from them, rather
+    than receiving a generator or an action-space tensor built by the caller.
+    """
+    torch.set_num_threads(1)
+
+    generator = GaussianMixtureGenerator(
+        weights=[1.0], means=[task["mean"]], stds=[task["std"]], low=0.0, high=1.0
+    )
+    arms = analysis.build_quote_grid(0.0, 1.0, task["delta"], epsilon=task["epsilon"])
+
+    summary = run_symmetric_duel(
+        generator=generator,
+        n_episodes=task["n_episodes"],
+        n_rounds=task["n_rounds"],
+        agent_cfg=build_agent_cfg(arms, task["reward_range"], task["eta"]),
+        window=task["window"],
+        epsilon=task["epsilon"],
+        seed=task["seed"],
+    )
+    return {"eta": task["eta"]} | {k: v.item() for k, v in summary.items()}
+
+
+def _style_eta_axis(ax: plt.Axes, optimal_eta: float) -> None:
+    """Log-scale eta axis shared by both panels, with eta* marked by a star tick."""
+    ax.set_xscale("log")
+    ax.axvline(optimal_eta, color="0.5", linestyle="--")
+    ax.set_xticks([optimal_eta], labels=[r"$\eta^\star$"], minor=True)
+    ax.tick_params(axis="x", which="minor", colors="0.5")
+    ax.set_xlabel(r"$\eta$")
+
+
 def plot_eta_sweep(
     records: list[dict],
     nash_bid: float,
     nash_ask: float,
     nash_spread: float,
     optimal_eta: float,
-) -> plt.Figure:
-    fig, (ax_quotes, ax_spread) = plt.subplots(1, 2, figsize=(13, 5.5), layout="constrained")
-
+) -> tuple[plt.Figure, plt.Figure]:
+    """Two standalone, quarter-page-sized figures meant to be placed side by side."""
     etas = [r["eta"] for r in records]
+
+    fig_quotes, ax_quotes = plt.subplots(figsize=FIGSIZE, layout="constrained")
     ax_quotes.errorbar(
         etas,
         [r["bid_mean"] for r in records],
         yerr=[r["bid_std"] for r in records],
-        fmt="o-",
-        color="tab:blue",
-        markersize=4,
-        capsize=3,
-        label="Learned bid",
+        fmt="o",
+        color=COLOR_BID,
     )
     ax_quotes.errorbar(
         etas,
         [r["ask_mean"] for r in records],
         yerr=[r["ask_std"] for r in records],
-        fmt="s--",
-        color="tab:orange",
-        markersize=4,
-        capsize=3,
-        label="Learned ask",
+        fmt="o",
+        color=COLOR_ASK,
     )
+    ax_quotes.axhline(nash_bid, color=COLOR_BID, linestyle=":")
+    ax_quotes.axhline(nash_ask, color=COLOR_ASK, linestyle=":")
+    ax_quotes.set_ylabel("Quote")
+    _style_eta_axis(ax_quotes, optimal_eta)
+
+    fig_spread, ax_spread = plt.subplots(figsize=FIGSIZE, layout="constrained")
     ax_spread.errorbar(
         etas,
         [r["spread_mean"] for r in records],
         yerr=[r["spread_std"] for r in records],
-        fmt="o-",
-        color="tab:blue",
-        markersize=4,
-        capsize=3,
-        label="Learned spread",
+        fmt="o",
+        color=COLOR_SPREAD,
     )
-
-    ax_quotes.axhline(nash_bid, color="black", linestyle=":", label="Nash bid")
-    ax_quotes.axhline(nash_ask, color="black", linestyle="-.", label="Nash ask")
-    ax_spread.axhline(nash_spread, color="black", linestyle=":", label="Nash spread")
-
-    ax_quotes.set_ylabel("Quote")
-    ax_quotes.set_title("Learned bid/ask vs. learning rate")
+    ax_spread.axhline(nash_spread, color=COLOR_SPREAD, linestyle=":")
+    ax_spread.set_ylim(bottom=0)
     ax_spread.set_ylabel("Spread")
-    ax_spread.set_title("Learned spread vs. learning rate")
+    _style_eta_axis(ax_spread, optimal_eta)
 
-    for ax in (ax_quotes, ax_spread):
-        ax.set_xscale("log")
-        ax.axvline(optimal_eta, color="gray", linestyle="--", alpha=0.7)
-        ax.annotate(
-            "optimal η",
-            xy=(optimal_eta, 0.97),
-            xycoords=("data", "axes fraction"),
-            xytext=(3, 0),
-            textcoords="offset points",
-            rotation=90,
-            va="top",
-            ha="left",
-            fontsize=8,
-            color="gray",
-        )
-        ax.set_xlabel("Learning rate η")
-        ax.grid(True, linestyle="--", alpha=0.5)
-        ax.legend(fontsize=8)
+    return fig_quotes, fig_spread
 
-    return fig
+
+def replot(exp_dir: str) -> None:
+    """Regenerate the figures from a previous run's saved records, no relearning.
+
+    Reads back exactly what ``main`` wrote out (``records.json``,
+    ``optimal_eta.json``, ``nash_reference.json``) and re-runs only
+    ``plot_eta_sweep``, so plot-only tweaks don't require rerunning the sweep.
+    """
+    exp = ExperimentManager(exp_dir)
+    records = exp.load_json("records")
+    optimal_eta = exp.load_json("optimal_eta")
+    nash = exp.load_json("nash_reference")
+
+    fig_quotes, fig_spread = plot_eta_sweep(
+        records, nash["bid"], nash["ask"], nash["spread"], optimal_eta
+    )
+    exp.save_figure("01a_eta_sweep_quotes", fig_quotes, fmt="pdf")
+    exp.save_figure("01b_eta_sweep_spread", fig_spread, fmt="pdf")
+    exp.save_figure("01a_eta_sweep_quotes", fig_quotes)
+    exp.save_figure("01b_eta_sweep_spread", fig_spread)
+    plt.close("all")
+    print(f"Replotted from {exp.path}.")
 
 
 def main(args: argparse.Namespace) -> None:
+    if args.replot:
+        replot(args.replot)
+        return
+
     manager = ResultsManager(args.results_dir)
 
     with manager.new_experiment(name=args.experiment_name) as exp:
@@ -187,29 +273,45 @@ def main(args: argparse.Namespace) -> None:
             logger.info(f"Sweeping etas: {[f'{e:.6g}' for e in etas]}")
 
             reward_range = tuple(args.reward_range)
-            records = []
+            tasks = [
+                {
+                    "eta": eta,
+                    "mean": args.mean,
+                    "std": args.std,
+                    "delta": args.delta,
+                    "epsilon": args.epsilon,
+                    "reward_range": reward_range,
+                    "n_episodes": args.episodes,
+                    "n_rounds": args.rounds,
+                    "window": args.window,
+                    "seed": args.seed,
+                }
+                for eta in etas
+            ]
 
-            for eta in etas:
-                logger.info(f"eta={eta:.6g}")
-                summary = run_symmetric_duel(
-                    generator=generator,
-                    n_episodes=args.episodes,
-                    n_rounds=args.rounds,
-                    agent_cfg=build_agent_cfg(arms, reward_range, eta),
-                    window=args.window,
-                    epsilon=args.epsilon,
-                    seed=args.seed,
-                )
-                records.append({"eta": eta} | {k: v.item() for k, v in summary.items()})
+            n_jobs = max(1, min(args.jobs, len(tasks)))
+            logger.info(f"Running {len(tasks)} etas across {n_jobs} process(es).")
+            if n_jobs == 1:
+                records = [run_one_eta(task) for task in tasks]
+            else:
+                with ProcessPoolExecutor(max_workers=n_jobs) as pool:
+                    records = list(pool.map(run_one_eta, tasks))
 
-            fig = plot_eta_sweep(records, nash_bid, nash_ask, nash_spread, optimal_eta)
+            fig_quotes, fig_spread = plot_eta_sweep(
+                records, nash_bid, nash_ask, nash_spread, optimal_eta
+            )
+            # Vector PDFs for the manuscript; save_all below also drops PNG
+            # previews of the same figures for quick viewing.
+            exp.save_figure("01a_eta_sweep_quotes", fig_quotes, fmt="pdf")
+            exp.save_figure("01b_eta_sweep_spread", fig_spread, fmt="pdf")
 
             exp.save_all(
                 {
                     "config": vars(args),
                     "records": records,
                     "optimal_eta": optimal_eta,
-                    "01_eta_sweep": fig,
+                    "01a_eta_sweep_quotes": fig_quotes,
+                    "01b_eta_sweep_spread": fig_spread,
                     "nash_reference": {
                         "bid": nash_bid,
                         "ask": nash_ask,
@@ -235,6 +337,16 @@ if __name__ == "__main__":
     parser.add_argument("--experiment_name", type=str, default="eta_sweep")
     parser.add_argument("--results_dir", type=str, default="./results")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--replot",
+        type=str,
+        default=None,
+        metavar="EXP_DIR",
+        help="Path to a previous experiment directory (e.g. "
+        "results/<timestamp>_eta_sweep); if given, every other flag is "
+        "ignored and the figures are regenerated from its saved records.json "
+        "instead of rerunning the sweep.",
+    )
 
     parser.add_argument("--mean", type=float, default=0.5, help="Mean of the Gaussian value distribution.")
     parser.add_argument("--std", type=float, default=0.1, help="Std of the Gaussian value distribution.")
@@ -266,6 +378,13 @@ if __name__ == "__main__":
         nargs=2,
         default=[-0.8, 0.5],
         help="Bounds used by each Exp3 expert to normalize rewards into losses.",
+    )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=os.cpu_count() or 1,
+        help="Number of etas to learn in parallel worker processes. 1 disables "
+        "multiprocessing.",
     )
 
     main(parser.parse_args())
