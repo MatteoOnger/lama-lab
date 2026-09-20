@@ -3,32 +3,50 @@ approaching the continuous Nash price envelope as Delta -> 0 (Theorem 4.8).
 
 For a fixed asset-value distribution, learns the symmetric equilibrium of
 the two-maker market-making game with AgentBlumMansour on grids of several
-tick sizes, then plots each grid's distance from the continuous Nash price
-envelope (lama_lab.analysis.get_all_unique_fixed_points /
-get_nash_market_making), analogous to the manuscript's D_env / epsilon_Delta.
-A slope-1 reference line on the log-log plot is the O(Delta) rate Remark 4.2
-predicts under a strict-contraction condition.
+tick sizes, then plots the learned bid and the learned ask, each against its
+own continuous Nash reference (lama_lab.analysis.get_all_unique_fixed_points
+/ get_nash_market_making), as Delta shrinks. This shows the two components of
+the manuscript's envelope directly, rather than the single compounded
+distance D_env = |bid - nash_bid| + |ask - nash_ask| (Theorem 4.8's target
+quantity, still logged per delta for reference).
 
-Cost, not accuracy, is what limits how fine a grid this can reach: the number
-of arms grows like Delta^-2, and Blum-Mansour solves one stationary
-distribution per episode per round, so each round costs at least O(n_arms^2)
-and empirically worse as n_arms grows (measured on an 8-core i7, roughly
-0.19 / 0.64 / 4.2 seconds per 1000 rounds per episode at 15 / 55 / 210 arms;
-820 arms was already 45 minutes per 1000 rounds per episode, a cliff rather
-than a trend -- stay at Delta >= 0.05 unless you have much more compute).
-n_rounds is kept the same across grids (finer grids need at least as much
-exploration, not less), and n_episodes is reduced instead as the grid gets
-finer, which only adds statistical smoothing rather than affecting whether
-the learner actually converges.
+Raw per-round compute (O(n_arms^2) to O(n_arms^3) for Blum-Mansour's
+stationary-distribution solve) is not actually the binding constraint here.
+The manuscript's Corollary 4.10 gets its guarantee from Blum-Mansour's
+classical external-to-swap-regret reduction over n_arms Exp3 experts, whose
+swap regret is bounded by roughly n_arms times a single expert's own
+O(sqrt(T * n_arms * log n_arms)) external regret, i.e.
+O(n_arms^1.5 * sqrt(T log n_arms)). For that bound to be a small fraction of
+T -- for the guarantee to be non-vacuous, let alone empirically visible --
+needs T = Omega(n_arms^3). Empirically this checked out: n_arms=15 visibly
+leaves uniform within a few thousand rounds and n_arms=28 partially
+converges within 50,000, but n_arms=55/78/120 all plateau at the same
+under-converged point within that same budget regardless of learning rate --
+the round budget, not the grid, is what has to grow with n_arms. eta is
+therefore a plain fixed learning rate (`--eta`, applied to every expert)
+rather than the horizon/arm-count formula this script used before -- that
+formula is the right one for a single Exp3 expert's own worst-case external
+regret, not for what each expert inside this swap-regret construction needs
+to move within a feasible T.
+
+Uses AgentBlumMansourExp3 rather than AgentBlumMansour +
+AgentExp3-expert_cfg: same algorithm, same math, bit-identical output on the
+same seed, but every expert's policy and update is one vectorized tensor op
+instead of a Python loop over n_arms expert objects -- 4-7x faster on CPU in
+testing, and structured to batch far better on a GPU too, which matters a
+lot once T needs to reach into the millions for n_arms > 30 or so.
+`--jobs` (worker processes) is a CPU-parallelism device; on a single GPU
+runtime pass `--jobs 1` and let one process use the whole card instead of
+several processes fighting over its one CUDA context.
 
 Usage
 -----
     python scripts/delta_sweep.py
-    python scripts/delta_sweep.py --deltas 0.2 0.1 0.05 --episodes 100 50 15
+    python scripts/delta_sweep.py --deltas 0.5 0.2 --eta 0.1
+    python scripts/delta_sweep.py --jobs 1  # single GPU runtime
 """
 
 import argparse
-import math
 import os
 import traceback
 from concurrent.futures import ProcessPoolExecutor
@@ -73,13 +91,14 @@ mpl.rcParams.update(
 )
 
 # MATLAB/pgfplots default color order, close to but distinct from matplotlib's
-# own tab: palette. Purple matches the other two sweep scripts' spread color.
-COLOR_DIST = "#7E2F8E"
+# own tab: palette. Matches eta_sweep.py's bid/ask colors.
+COLOR_BID = "#0072BD"
+COLOR_ASK = "#D95319"
 
 # Roughly half an ACM two-column's ~3.33in column width, matching the other
 # two sweep scripts' panels. No legend is drawn (there is no room for one at
-# this size and font); color code in the caption as gray dashed = O(Delta)
-# reference slope, purple = empirical distance to the Nash envelope.
+# this size and font); color code in the caption as blue = bid, orange = ask,
+# dotted = the corresponding continuous Nash reference.
 FIGSIZE = (3, 2.5)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -112,17 +131,11 @@ def run_one_delta(task: dict) -> dict:
     )
     arms = analysis.build_quote_grid(0.0, 1.0, task["delta"], epsilon=task["epsilon"])
     n_arms = arms.shape[0]
-    eta = math.sqrt(2.0 * math.log(n_arms) / (task["n_rounds"] * n_arms))
     agent_cfg = {
-        "_target_": "lama_lab.agents.AgentBlumMansour",
+        "_target_": "lama_lab.agents.AgentBlumMansourExp3",
         "action_space": arms,
-        "expert_cfg": {
-            "_partial_": True,
-            "_target_": "lama_lab.agents.AgentExp3",
-            "reward_range": task["reward_range"],
-            "eta": eta,
-            "gamma": 0.0,
-        },
+        "reward_range": task["reward_range"],
+        "eta": task["eta"],
     }
     summary = run_symmetric_duel(
         generator=generator,
@@ -138,7 +151,7 @@ def run_one_delta(task: dict) -> dict:
         "delta": task["delta"],
         "n_arms": n_arms,
         "n_episodes": task["n_episodes"],
-        "eta": eta,
+        "eta": task["eta"],
         "bid_mean": summary["bid_mean"].item(),
         "bid_std": summary["bid_std"].item(),
         "ask_mean": summary["ask_mean"].item(),
@@ -147,25 +160,36 @@ def run_one_delta(task: dict) -> dict:
 
 
 def plot_delta_sweep(records: list[dict], nash_bid: float, nash_ask: float) -> plt.Figure:
-    """Distance to the continuous Nash envelope vs. tick size, log-log."""
+    """Learned bid and ask vs. tick size, each against its own Nash reference.
+
+    One quarter-page-sized figure showing both components of the envelope
+    directly, rather than the single compounded
+    D_env = |bid - nash_bid| + |ask - nash_ask|.
+    """
     records = sorted(records, key=lambda r: r["delta"])
     deltas = [r["delta"] for r in records]
-    dist_env = [
-        abs(r["bid_mean"] - nash_bid) + abs(r["ask_mean"] - nash_ask) for r in records
-    ]
 
     fig, ax = plt.subplots(figsize=FIGSIZE, layout="constrained")
-    ax.plot(deltas, dist_env, "o-", color=COLOR_DIST)
-
-    # O(Delta) reference slope, anchored to match the finest grid's distance.
-    ref_x = torch.tensor(deltas)
-    ref_y = ref_x * (dist_env[0] / deltas[0])
-    ax.plot(ref_x, ref_y, "--", color="0.5")
-
+    ax.errorbar(
+        deltas,
+        [r["bid_mean"] for r in records],
+        yerr=[r["bid_std"] for r in records],
+        fmt="o-",
+        color=COLOR_BID,
+    )
+    ax.errorbar(
+        deltas,
+        [r["ask_mean"] for r in records],
+        yerr=[r["ask_std"] for r in records],
+        fmt="o-",
+        color=COLOR_ASK,
+    )
+    ax.axhline(nash_bid, color=COLOR_BID, linestyle=":")
+    ax.axhline(nash_ask, color=COLOR_ASK, linestyle=":")
     ax.set_xscale("log")
-    ax.set_yscale("log")
     ax.set_xlabel(r"$\Delta$")
-    ax.set_ylabel(r"$D_{\mathrm{env}}$")
+    ax.set_ylabel("Quote")
+
     return fig
 
 
@@ -233,6 +257,7 @@ def main(args: argparse.Namespace) -> None:
                     "std": args.std,
                     "epsilon": args.epsilon,
                     "reward_range": reward_range,
+                    "eta": args.eta,
                     "n_episodes": episodes,
                     "n_rounds": args.rounds,
                     "window": args.window,
@@ -321,18 +346,21 @@ if __name__ == "__main__":
         "--deltas",
         type=float,
         nargs="*",
-        default=[0.2, 0.1, 1.0 / 15.0, 0.05],
-        help="Tick sizes to sweep, from coarsest to finest. Below 0.05 the "
-        "per-episode cost stops scaling gently (see module docstring).",
+        default=[0.5, 1.0 / 3.0, 0.25, 0.2],
+        help="Tick sizes to sweep, from coarsest to finest -- n_arms = 3, 6, "
+        "10, 15 by default. Keep n_arms^3 well under --rounds (see module "
+        "docstring); n_arms=210 (delta=0.05) needs tens of millions of "
+        "rounds to have a chance of leaving its uniform start, which is why "
+        "this script no longer defaults to it.",
     )
     parser.add_argument(
         "--episodes",
         type=int,
         nargs="*",
-        default=[100, 60, 30, 15],
-        help="Episode count paired 1:1 with --deltas (same length required); "
-        "lower for finer grids to bound cost, since it only affects "
-        "statistical smoothing, not convergence.",
+        default=[100, 100, 100, 100],
+        help="Episode count paired 1:1 with --deltas (same length required). "
+        "Uniform by default since n_arms^3 is small across this whole "
+        "range, unlike the finer grids this script used to default to.",
     )
     parser.add_argument("--window", type=int, default=1_000, help="Final rounds averaged for the learned quotes.")
     parser.add_argument(
@@ -341,6 +369,15 @@ if __name__ == "__main__":
         nargs=2,
         default=[-1.0, 0.5],
         help="Bounds used by each Exp3 expert to normalize rewards into losses.",
+    )
+    parser.add_argument(
+        "--eta",
+        type=float,
+        default=0.05,
+        help="Fixed learning rate for every Exp3 expert, at every tick size. "
+        "Empirically (not the horizon/arm-count formula this script used "
+        "before, see module docstring), this moves n_arms=15 visibly away "
+        "from uniform within a few thousand rounds.",
     )
     parser.add_argument(
         "--jobs",

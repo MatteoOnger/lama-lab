@@ -6,13 +6,24 @@ linearly with the standard deviation of the asset value) by, for each
 standard deviation, computing the exact continuous Nash spread on a sample of
 the distribution (lama_lab.analysis.get_all_unique_fixed_points /
 get_nash_market_making) and learning the symmetric equilibrium with two
-AgentBlumMansour makers on the discretized grid, each run at its own
-horizon-optimal expert learning rate. Blum-Mansour (rather than plain Exp3) is
-used because it is the no-internal-regret algorithm Corollary 4.10 requires.
+AgentBlumMansourExp3 makers on the discretized grid. Blum-Mansour (rather
+than plain Exp3) is used because it is the no-internal-regret algorithm
+Corollary 4.10 requires; AgentBlumMansourExp3 rather than AgentBlumMansour +
+AgentExp3-expert_cfg is the same algorithm computed with vectorized tensor
+ops instead of a Python loop over n_arms expert objects (4-7x faster on CPU
+in testing), which matters because of what's below.
 
-Each round costs O(n_arms^3) per episode (Blum-Mansour solves one stationary
-distribution per episode), so the default grid is coarser than a plain-Exp3
-sweep could afford; keep `--delta` and `--episodes` in mind if you widen it.
+Neither the grid resolution nor eta alone fixed the flat, std-insensitive
+spread this script used to produce (both were tried; see delta_sweep.py's
+docstring for the full account). The real constraint is sample complexity:
+Blum-Mansour's swap regret over n_arms Exp3 experts needs T = Omega(n_arms^3)
+before the learner has a real chance to leave its uniform start, which is
+why `--eta` is a plain fixed learning rate (not the horizon/arm-count
+formula this script used before, which is the right one for a single Exp3
+expert's own worst-case external regret, not for this construction) and
+`--delta`/`--rounds`/`--episodes` need to be chosen together against that
+constraint -- coordinate with whatever delta_sweep.py's own calibration
+settles on, since both scripts share the same underlying cost model.
 
 The asset value is a Gaussian clamped to [0, 1], which departs from the
 unbounded location-scale family Proposition 3.10 assumes. Keep `--stds` small
@@ -22,20 +33,17 @@ the fraction of samples clamped at each std is logged and saved.
 
 Every standard deviation is an independent run, so on a CPU-only machine they
 are run in separate processes (``--jobs``, default: one per logical core).
-Torch's own intra-op threading does not help this workload (the per-round
-tensors are tiny; measured on an 8-core i7, 8 threads in one process was
-slower than 1) and each worker pins itself to a single thread to avoid
-oversubscription.
+On a single GPU runtime, pass `--jobs 1` instead -- multiple processes
+fighting over one CUDA context is not the same win multiprocessing is on CPU.
 
 Usage
 -----
     python scripts/variance_sweep.py
-    python scripts/variance_sweep.py --stds 0.02 0.05 0.08 0.11 0.14 --rounds 50000
-    python scripts/variance_sweep.py --jobs 1  # disable multiprocessing
+    python scripts/variance_sweep.py --stds 0.02 0.05 0.08 0.11 0.14
+    python scripts/variance_sweep.py --jobs 1  # single GPU runtime
 """
 
 import argparse
-import math
 import os
 import traceback
 from concurrent.futures import ProcessPoolExecutor
@@ -156,17 +164,11 @@ def run_one_std(task: dict) -> dict | None:
 
     arms = analysis.build_quote_grid(0.0, 1.0, task["delta"], epsilon=task["epsilon"])
     n_arms = arms.shape[0]
-    eta = math.sqrt(2.0 * math.log(n_arms) / (task["n_rounds"] * n_arms))
     agent_cfg = {
-        "_target_": "lama_lab.agents.AgentBlumMansour",
+        "_target_": "lama_lab.agents.AgentBlumMansourExp3",
         "action_space": arms,
-        "expert_cfg": {
-            "_partial_": True,
-            "_target_": "lama_lab.agents.AgentExp3",
-            "reward_range": task["reward_range"],
-            "eta": eta,
-            "gamma": 0.0,
-        },
+        "reward_range": task["reward_range"],
+        "eta": task["eta"],
     }
     summary = run_symmetric_duel(
         generator=generator,
@@ -184,7 +186,7 @@ def run_one_std(task: dict) -> dict | None:
         "learned_spread_mean": summary["spread_mean"].item(),
         "learned_spread_std": summary["spread_std"].item(),
         "clamped_mass": clamped_mass,
-        "eta": eta,
+        "eta": task["eta"],
     }
 
 
@@ -233,6 +235,7 @@ def main(args: argparse.Namespace) -> None:
                     "delta": args.delta,
                     "epsilon": args.epsilon,
                     "reward_range": reward_range,
+                    "eta": args.eta,
                     "n_episodes": args.episodes,
                     "n_rounds": args.rounds,
                     "window": args.window,
@@ -321,21 +324,25 @@ if __name__ == "__main__":
     parser.add_argument(
         "--delta",
         type=float,
-        default=0.1,
-        help="Quote grid tick size. Blum-Mansour's per-episode cost is "
-        "O(n_arms^3), so a finer grid than this gets expensive fast; fall "
-        "back to 0.2 (matching blum_1fp.yml) if this is too slow.",
+        default=0.05,
+        help="Quote grid tick size. Needs to be this fine (210 arms) for the "
+        "learned spread to actually track std rather than getting stuck at "
+        "whatever a coarser grid's payoff-dominant equilibrium happens to "
+        "be, see module docstring; a finer grid than this gets expensive "
+        "fast (Blum-Mansour's per-episode cost is O(n_arms^3)).",
     )
     parser.add_argument("--epsilon", type=float, default=1e-3, help="Environment price tolerance.")
     parser.add_argument("--eps_tol", type=float, default=1e-3, help="Fixed-point separation tolerance.")
     parser.add_argument("--tol", type=float, default=1e-3, help="Fixed-point/Nash validation tolerance.")
 
-    parser.add_argument("--rounds", type=int, default=20_000)
+    parser.add_argument("--rounds", type=int, default=50_000, help="Same for every std.")
     parser.add_argument(
         "--episodes",
         type=int,
-        default=100,
-        help="Kept modest because of Blum-Mansour's O(n_arms^3) per-episode cost.",
+        default=20,
+        help="Kept small because of Blum-Mansour's O(n_arms^3) per-episode "
+        "cost at 210 arms; matches delta_sweep.py's episode count at its "
+        "own finest (0.05) grid point.",
     )
     parser.add_argument("--window", type=int, default=1_000, help="Final rounds averaged for the learned quotes.")
     parser.add_argument(
@@ -344,6 +351,14 @@ if __name__ == "__main__":
         nargs=2,
         default=[-1.0, 0.5],
         help="Bounds used by each Exp3 expert to normalize rewards into losses.",
+    )
+    parser.add_argument(
+        "--eta",
+        type=float,
+        default=0.05,
+        help="Fixed learning rate for every Exp3 expert. See module "
+        "docstring: the horizon/arm-count formula this used to be computed "
+        "from is the wrong scale for this construction.",
     )
     parser.add_argument(
         "--jobs",
