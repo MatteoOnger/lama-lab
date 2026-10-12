@@ -13,29 +13,34 @@ This is the highest-priority rule.
 
 - Do **NOT** change algorithms, control flow, conditions, data transformations, or execution order.
 - Do **NOT** change public API signatures, variable names, class names, function names, default argument values, or exception types.
-- Do **NOT** fix bugs, add new validation logic, or rewrite algorithms.
+- Do **NOT** fix bugs, add new validation logic, or rewrite algorithms. If you notice a bug or a hint that contradicts the code (e.g., an `is None` check on an attribute hinted as non-optional), report it in your final summary instead of changing it.
 - Only modify type hints, message wording/formatting, final `return` statements, and `pass` placeholders in abstract methods.
 
 ---
 
-## Type Hints
+## Default target
 
-Ensure complete and precise type annotations across all functions and methods.
+Apply the skill to the files or code the user points to (attached files, selections, or named paths).
 
-- **Completeness:** All parameters and return values must have explicit type hints.
-- **`__init__` Methods:** Must always be annotated with `-> None`.
-- **Modern Syntax:** Use modern Python typing conventions (e.g., `list[str]`, `dict[str, int]`, `float | None`) matching the project's target Python version.
-- **Precision:** Avoid `Any` or speculative types unless strictly necessary or dictated by external dynamic libraries.
-- Do not modify runtime code or add runtime type casting just to satisfy a type checker.
+If the user gives no target and does not say what to correct, apply it to the **Python files with uncommitted changes**: run `git status` and take every modified, staged, and untracked `.py` file (skip deleted files, notebooks, and non-Python files). Process each whole file, then list the files you touched. Never extend the scope to unchanged files.
 
 ---
 
-## Explicit Return Statements
+## Type hints
 
-Every function and method must have a clear and explicit execution exit.
+Type hints are the source of truth for types, including the type fields of docstrings.
 
-- **Explicit Return Types:** Every function/method must declare its return type (e.g., `-> int`, `-> torch.Tensor`, `-> None`).
-- **Final `return` for `-> None`:** Functions and methods that return `None` (including `__init__`) **must end with an explicit `return` statement** on a new line at the very end of the function body:
+- **Completeness:** Every parameter and return value must be annotated, except `self` and `cls`.
+- **`__init__`:** Always annotated with `-> None`.
+- **Modern syntax:** Use `list[str]`, `dict[str, int]`, `float | None` (never `List`, `Optional`, `Union`), matching the project's target Python version. Import abstract types such as `Callable` and `Iterable` from `collections.abc`.
+- **Precision:** Parametrize generics (`dict[str, Any]`, not bare `dict`; `tuple[float, float]`, not `tuple`). Avoid `Any` unless strictly necessary or dictated by an external dynamic library.
+- Do not modify runtime code or add runtime casts just to satisfy a type checker.
+
+---
+
+## Return statements
+
+- **Final `return` for `-> None`:** This is a deliberate house style. Every function and method that returns `None` (including `__init__`) **must end with an explicit bare `return`** on its own line at the end of the body. Do not remove it as "useless" because a linter suggests so.
 
 ```python
 def __init__(self, shape: tuple[int, ...], dtype: torch.dtype) -> None:
@@ -49,15 +54,14 @@ def log_status(message: str) -> None:
     return
 ```
 
-- **Non-final returns:** Do NOT touch, move, or modify existing internal `return` statements used for early exits or conditional logic.
+- **Exceptions:** Abstract methods (see below), and functions whose body ends with `raise`, do not get a final `return`.
+- **Non-final returns:** Do not touch, move, or modify existing internal `return` statements used for early exits or conditional logic.
 
 ---
 
-## Abstract Methods
+## Abstract methods
 
-Abstract methods defined with `@abstractmethod` must use `pass` as their body placeholder.
-
-- If an abstract method includes a docstring, place `pass` on a new line immediately following the docstring:
+Methods decorated with `@abstractmethod` use `pass` as their body, placed on its own line after the docstring if there is one. This is deliberate house style and takes precedence over the final-`return` rule.
 
 ```python
 @abstractmethod
@@ -66,31 +70,24 @@ def contains(self, x: torch.Tensor) -> torch.Tensor:
     pass
 ```
 
-- Do not use `Ellipsis` (`...`) or `raise NotImplementedError` in abstract base methods unless specifically required by an external framework pattern.
+Do not use `...` or `raise NotImplementedError` in abstract methods unless an external framework pattern requires it.
 
 ---
 
-## Messages (Exceptions, Logging, and Prints)
+## Messages (exceptions, warnings, logging, prints)
 
-Standardize all human-readable text strings in `raise` exceptions, `logger` calls, and `print` statements.
+Standardize human-readable strings in `raise` exceptions, `warnings.warn`, `assert` messages, `logger` calls, and `print` statements.
 
-### Caution with log messages
-
-Log messages are more likely than exceptions or prints to follow an intentional, non-prose format — e.g., structured/key-value logging (`event=order_filled qty=10`), machine-parsed formats, templates with trailing placeholders, or a deliberate lowercase/no-punctuation convention used consistently across the codebase.
-
-- Before applying the formatting rules below to a `logger` call, look at the surrounding log calls to infer the intended format.
-- If a log message clearly follows a consistent structured or stylistic convention (even if it differs from the rules below, e.g. no trailing period, lowercase start, no quotes around identifiers), preserve and reinforce that convention rather than overriding it with the rigid rules.
-- If a log message just contains a lazy human-readable sentence with no evident structure or convention to protect, standardize it normally per the rules below.
-- When unsure whether a deviation is intentional, err toward leaving the message closer to its original form and improving it only within the style it already follows, rather than forcing the rigid rules.
-
-### Formatting Rules
-
-The rules below apply directly to exceptions and prints, and to log messages that are plain human-readable sentences with no other convention to preserve (see above).
+### Formatting rules
 
 1. **Capitalization:** Start every message with an uppercase letter.
-2. **Punctuation:** End every message with a period (`.`).
-3. **Identifiers:** Surround variable names, parameter names, or code identifiers with single quotes (e.g., `'tick_size'`). Preserve their exact casing.
-4. **Interpolation:** Always use f-strings for string interpolation.
+2. **Punctuation:** End every message with a period. For a message built from several concatenated string literals, the period goes at the end of the whole message, not of each fragment.
+3. **Quotes:** Surround code identifiers with single quotes, preserving their exact casing. Code identifiers are variable, parameter, attribute, function, and class names (e.g., `'tick_size'`, `'reward'`, `'DiscreteSpace'`, `'_act()'`). When a class name appears in a message, it is quoted (e.g., `'BlumMansour'`). Algorithm names (e.g., Blum-Mansour) are valid in messages and are never quoted. Prefer the class name when writing a new message, since it uniquely identifies a specific object, but do **not** rewrite an existing message that uses an algorithm name correctly, only fix its capitalization, punctuation, and quoting.
+4. **Interpolation:** Always use f-strings, including in `logger` calls. Convert `+` concatenation, `%` formatting, and `.format()` to f-strings.
+
+### Log messages
+
+Apply the rules above to a `logger` call only if it is a plain human-readable sentence. If it follows a structured or machine-parsed format (e.g., `event=order_filled qty=10`, templates with trailing placeholders, or a consistent lowercase/no-punctuation convention across nearby calls), leave it untouched.
 
 ### Examples
 
@@ -111,6 +108,17 @@ raise ValueError(f"'high' must be greater than 'low'. Got {low} and {high}.")
 ```
 
 ```python
+# Incorrect (algorithm name quoted)
+raise ValueError("'Blum-Mansour' requires a discrete action space.")
+
+# Correct (algorithm name, unquoted)
+raise ValueError("Blum-Mansour requires a discrete action space.")
+
+# Also correct (class name, quoted)
+raise ValueError("'BlumMansour' requires a discrete 'action_space'.")
+```
+
+```python
 # Incorrect
 print("processing batch")
 
@@ -120,17 +128,14 @@ print("Processing batch.")
 
 ---
 
-## Final Review Checklist
+## Final review checklist
 
-Before finishing, verify:
-
-- [ ] **Runtime logic is 100% unchanged** (no algorithmic, flow, or API modifications).
-- [ ] Every function and method has full parameter and return type hints.
-- [ ] `__init__` methods are annotated with `-> None`.
-- [ ] Every function/method ending with `-> None` ends with an explicit `return` statement.
-- [ ] Existing internal non-final `return` statements were preserved untouched.
+- [ ] **Runtime logic is 100% unchanged**; suspected bugs were reported, not fixed.
+- [ ] Every function and method has full parameter and return hints, with parametrized generics and modern syntax.
+- [ ] `__init__` is annotated with `-> None`.
+- [ ] Every `-> None` function ends with an explicit `return`, except abstract methods and bodies ending in `raise`; internal returns are untouched.
 - [ ] All `@abstractmethod` bodies use `pass`.
-- [ ] Exception and print messages, and log messages with no structured/stylistic convention to preserve, start with a capital letter and end with a period.
-- [ ] Log messages following an intentional structured or stylistic convention were preserved and reinforced rather than forced into the rigid formatting rules.
-- [ ] Code identifiers inside error/log messages are enclosed in single quotes `'identifier'`.
-- [ ] Dynamic string formatting uses f-strings consistently.
+- [ ] Messages start with a capital letter and end with a period (once, at the end of the whole message).
+- [ ] Variable, parameter, and class names in messages are single-quoted; algorithm names are valid and never quoted (class names are preferred only in new messages).
+- [ ] Structured log messages were left untouched; all other interpolation, including in `logger` calls, uses f-strings.
+- [ ] If no target was given, only the Python files with uncommitted changes were processed, and they are listed in the summary.

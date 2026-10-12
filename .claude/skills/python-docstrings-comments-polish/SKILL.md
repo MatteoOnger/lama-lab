@@ -1,152 +1,158 @@
 ---
 name: python-docstrings-comments-polish
-description: Polish docstrings and inline comments in existing Python code (NumPy-style docstrings, plain-text code references, purposeful comments) without changing any logic. Use when the user asks to improve, clean up, document, or comment existing Python code, or to review/fix docstrings, without altering behavior.
+description: Polish docstrings and inline comments in existing Python code (NumPy-style docstrings, Sphinx markup, purposeful comments) without changing any logic. Use when the user asks to improve, clean up, document, or comment existing Python code, or to review/fix docstrings, without altering behavior.
 ---
 
 # Python Docstrings and Comments Polish
 
 Polish existing Python code by improving **docstrings and inline comments** for clarity, accuracy, and completeness **without modifying any executable code or logic**.
 
-## Critical constraint: preserve code and logic
+## Critical Constraint: Preserve Code and Logic
 
-This is the highest-priority rule.
-
-- **Do NOT touch any Python code:** Do not change variable names, control flow, functions, method signatures, return statements, type hints, exception types, or logic.
-- Only add, modify, or remove **docstrings** and **comments**.
+This is the absolute highest-priority rule.
+- **Do NOT touch any Python executable code:** Do not change variable names, control flow, functions, method signatures, return statements, type hints, exception types, or logic.
+- Only add, modify, or remove **docstrings** and inline **comments**.
 - When in doubt, preserve the existing code exactly as it is.
 
 ---
 
-## Docstrings
+## Default Target
 
-Use concise, precise **NumPy-style docstrings**.
+Apply the skill to the files or code the user points to (attached files, selections, or named paths).
 
-### General rules
+If the user gives no target and does not say what to correct, apply it to the **Python files with uncommitted changes**: run `git status` and take every modified, staged, and untracked `.py` file (skip deleted files, notebooks, and non-Python files). Process each whole file, then list the files you touched. Never extend the scope to unchanged files.
 
-- Public classes, functions, and methods should have appropriate docstrings.
-- When you find a sequence of """""""" with no content, add a meaningful docstring.
-- Private implementation details (e.g., `_internal_method`) do not necessarily need docstrings unless complex, particularly short descriptions are acceptable.
-- Do not add a separate docstring to `__init__` when the class docstring documents constructor parameters.
-- Document actual existing behavior, not intended or proposed behavior.
-- Keep documentation concise and non-redundant.
+---
 
-### Class Attributes & Inheritance
+## 1. Docstrings
 
-- Document public attributes, properties, and parameter-derived state in an `Attributes` section.
-- Do not repeat entries in `Attributes` if they are already documented in the class's own `Parameters` section.
-- **Inherited Attributes:** Subclasses **must include inherited public attributes and properties** in their `Attributes` section. Users inspecting a subclass docstring should see its full public attribute interface without needing to check parent classes.
+Use concise, precise **NumPy-style docstrings**. Document actual existing behavior, not intended or proposed behavior.
 
-Example of subclass attribute documentation:
+### 1.1 General Guidelines
+- **Coverage:** Public classes, functions, and methods must have appropriate docstrings. When you find empty docstring placeholders (e.g., `""""""`), fill them with meaningful content.
+- **Private & Dunder objects:** Implementation details (e.g., `_internal_method`) and standard magic/dunder methods (e.g., `__len__`, `__getitem__`) only need at most short, single-line descriptions unless their logic is uniquely complex.
+- **Classes vs. Constructors:** Document constructor parameters in the class-level docstring under the `Parameters` section. Do **not** add a separate docstring to the `__init__` method.
+- **Inheritance:** Subclasses should include inherited public attributes in their `Attributes` section, but avoid repeating inherited methods unless they have unique behavior or parameters. In addition, don't add redundant docstrings for methods that are already documented in the parent class unless they have unique behavior or parameters.
+
+### 1.2 Markup & Code References
+Always use proper **Sphinx/reStructuredText markup** for code references and math equations.
+- **Inline code & literals:** Use double backticks for variables, attributes, literals, or values (e.g., ` ``self.size`` `, ` ``None`` `, ` ``True`` `).
+- **Cross-references (prose only):** In summaries and descriptions (including parameter/attribute/return descriptions), use standard Sphinx roles for classes, methods, and functions.
+  - Class: `` :class:`~lama_lab.spaces.DiscreteSpace` ``
+  - Method: `` :meth:`~lama_lab.agents.AgentExp3.estimate_signal` `` or `` :meth:`_act` ``
+  - Function: `` :func:`torch.clamp` ``
+- **Type fields (no roles):** In the type position of `Parameters`, `Attributes`, `Returns`, and `Yields`, write plain type names without Sphinx roles.
+  - Project classes: short name (e.g., `Space`, `DiscreteSpace`, `Agent`), not the full import path.
+  - External types: qualified name (e.g., `torch.Tensor`, `torch.dtype`), since a bare name would be ambiguous.
+  - Example: `action_space : DiscreteSpace`, not `` action_space : :class:`~lama_lab.spaces.DiscreteSpace` ``.
+- **Math & Equations:** Keep math minimal. A docstring is not the place to derive or fully describe an algorithm; cite the paper or reference in the `References` section instead. Add a formula only when it genuinely clarifies what the code computes or how to use it (e.g., a key update rule, the meaning of a hyperparameter, a shape or normalization convention). Prefer one short formula over several, and plain words when they suffice. When a formula is warranted, use LaTeX formatting.
+  - Inline math: `` :math:`\hat\ell_{t,a} = \ell_t \mathbf 1\{a_t = a\} / p_{t,a}` ``
+  - Display math (block equations):
+    ```rst
+    .. math:: 
+       \mathbb E[R_T] \le \frac{\ln K}{\eta} + \frac{\eta T K}{2}
+    ```
+
+### 1.3 Specific Sections Formatting
+
+Use standard NumPy section headers (`Parameters`, `Returns`, `Yields`, `Raises`, `Attributes`, `Examples`, `Notes`, `References`, `See Also`) when applicable.
+
+- **`References`:** The only place for papers, books, or other external sources behind an algorithm. List one entry per source (authors, title, venue, year, and a link or DOI if available). Do not cite sources in `Notes` or `See Also`.
+- **`Notes`:** Implementation remarks, caveats, and (sparingly) a short formula. May mention a reference by number or name, but the full citation stays in `References`.
+- **`See Also`:** Only related classes, methods, or functions of the code base or its dependencies, never papers.
+
+#### Parameters
+The type field mirrors the type hint, with accepted types joined by `or` (including `None`, written `or None`, never `| None` or `Optional[...]`). Append `, optional` if and only if the parameter has a default value. If `None` has a special meaning, state it in the description. Omit default values in descriptions unless non-obvious.
+
+```python
+"""
+Parameters
+----------
+reward_range : tuple of float
+    Lower and upper bound of the reward, used to normalize it.
+eta : float, optional
+    Learning rate controlling how aggressively the distribution updates.
+seed : int or None, optional
+    Seed for the random number generator. If ``None``, a random seed is used.
+init_x : torch.Tensor or list[float]
+    Initial position.
+"""
+```
+
+#### Attributes & Inheritance
+Document public attributes and parameter-derived state in an `Attributes` section.
+- **Stored unchanged:** If an attribute is just a constructor parameter stored as-is (same type and meaning), document it only under `Parameters`. Do **not** repeat it in `Attributes`.
+- **Transformed:** If the attribute differs from the parameter (e.g., converted to a tensor, normalized, validated, different type), list it in `Attributes` with its actual type and meaning.
+- **Internal state:** Public attributes that are not constructor parameters (e.g., `weights`, counters, buffers) go only in `Attributes`.
+
+**Inherited Attributes:** Subclasses **must** include inherited public attributes so users can see the full interface without checking parent classes.
 
 ```python
 class DiscreteMMActionSpace(DiscreteSpace):
     """Discrete action space for Market Making.
 
-    Parameters
-    ----------
-    low : float
-        Lower bound of the action values.
-    high : float
-        Upper bound of the action values.
+    ... [Parameters section omitted for brevity] ...
 
     Attributes
     ----------
     shape : tuple of int
-        The shape of a single physical element (inherited from Space).
+        The shape of a single physical element (inherited from :class:`Space`).
     dtype : torch.dtype
-        The data type of the physical elements (inherited from Space).
-    ndim : int
-        Number of dimensions of a single element (inherited from Space).
+        The data type of the physical elements (inherited from :class:`Space`).
     num_elements : int
-        Total number of valid discrete actions (inherited from DiscreteSpace).
-    values : torch.Tensor
-        Tensor containing all valid action pairs (inherited from DiscreteSpace).
+        Total number of valid discrete actions (inherited from :class:`DiscreteSpace`).
     """
 ```
 
-### Docstring Sections
-
-Use standard NumPy section headers when applicable:
-
-- `Parameters`
-- `Returns`
-- `Yields`
-- `Raises`
-- `Attributes`
-- `Examples`
-- `Notes`
-- `See Also`
-
-#### Parameters & Type Conventions
-
-- For optional parameters, append `, optional` to the type. **Do not explicitly write `None`** in the type description (e.g., use `float, optional` rather than `float or None` or `float | None`).
-- Do not mention default values in parameter descriptions unless the default value or its functional behavior is non-obvious, complex, or contextually critical.
+#### Returns / Yields
+Naming the return variable is optional. Include a name only if it clarifies the purpose or helps distinguish multiple return values. If trivial, specify only the type. The type mirrors the return hint (including `or None`); never use `, optional` for returns.
 
 ```python
-Parameters
-----------
-low : float
-    Lowest price allowed on the grid.
-min_spread : float, optional
-    Minimum admissible value for ask - bid. If omitted, defaults to the tick size.
-device : torch.device, optional
-    Device on which the tensor is stored.
-```
-
-#### Returns Section
-
-- Naming the return variable (e.g., `mask : torch.Tensor`) is optional. Include a name only if it clarifies the purpose or helps the user understand the return value, in particular when multiple return values are present.
-- If no appropriate name exists or if the returned object is self-explanatory/trivial, specify only the type.
-
-```python
+"""
 Returns
 -------
-torch.Tensor
+probs : torch.Tensor or None
+    Tensor of shape ``(n_episodes, n_arms)`` containing the probabilities, or ``None`` if the agent does not maintain an explicit policy.
+
+Returns
+-------
+list[bool]
     Boolean mask tensor indicating validity for each sample.
-
-Returns
--------
-indices : torch.Tensor
-    1D tensor containing the mapped discrete indices.
+"""
 ```
-
-### Code references (plain text, no Sphinx markup)
-
-Within docstrings, refer to code elements as plain text, exactly as they appear in the code (i.e., as imported or defined) — no backticks, double backticks, or Sphinx roles.
-
-- Do **not** use double backticks for variables, attributes, literals, or values: write `self.size` or `None`, not ``self.size`` or ``None``.
-- Do **not** use `:class:`, `:meth:`, or `:func:` roles: write `Space`, `DiscreteSpace.from_indices`, or `torch.clamp` as plain text, not `:class:`Space``, `:meth:`DiscreteSpace.from_indices``, or `:func:`torch.clamp``.
-- Types, classes, methods, and functions are all written the same way: as plain dotted names (e.g., `torch.device`, `DiscreteSpace`, `numpy.ndarray`), matching how they'd be referenced in code.
 
 ---
 
-## Comments
+## 2. Inline Comments
 
 Review and refine inline comments in the code.
 
-- Keep comments concise, accurate, and purposeful.
-- Explain **why** something is done (intent/math/design reason), or clarify a step that isn't obvious from reading the code, rather than restating **what** the code does line by line.
-- Use comments to divide a function, method, or class body into logical sections when it contains multiple distinct blocks of work (e.g., `# Setup defaults`, `# Axes setup`, `# Plotting loop`, `# Deduplicate legend and finalize`). This is especially useful in longer functions where the structure isn't otherwise obvious at a glance.
-- Remove redundant, obvious, or outdated comments.
-- Do not add comments merely to increase documentation lines.
-- Comments must accurately reflect the code. Do not alter executable code to match a comment.
-- Style: start each comment with a capital letter; do not end it with a period.
+- **Explain "Why", not "What":** Clarify the intent, mathematical reasoning, or design choices behind a block of code. Do not restate what the syntax already makes obvious.
+- **Logical Grouping:** Use comments to visually divide long functions or classes into logical sections.
+  ```python
+  # Subtract max for numerical stability (prevents overflow in exp)
+  w_max = torch.amax(w, dim=1, keepdim=True)
+  exp_w = torch.exp(w - w_max)
+  
+  # Base exponential weights probabilities
+  probs = exp_w / torch.sum(exp_w, dim=1, keepdim=True)
+  ```
+- **Cleanup:** Remove redundant, obvious, or outdated comments. Do not add comments merely to inflate documentation.
+- **Style:** Start each inline comment with a capital letter. Do not end it with a period.
 
 ---
 
-## Final review checklist
+## 3. Final Review Checklist
 
 Before presenting the output, verify:
-
 - [ ] **Executable code is 100% untouched** (no logic, variable name, or type hint changes).
 - [ ] Public classes, methods, and functions have clean NumPy-style docstrings.
-- [ ] `__init__` methods do not have redundant separate docstrings.
-- [ ] Class `Attributes` sections list all public attributes, including **inherited attributes**.
-- [ ] Docstrings do not duplicate `Parameters` in the `Attributes` section for the same class.
-- [ ] Optional parameters use `, optional` without explicitly stating `None` in the type notation.
-- [ ] Default values in docstrings are omitted unless non-obvious or vital for context.
-- [ ] The `Returns` section uses names only when helpful; trivial/self-explanatory returns use type-only notation.
-- [ ] Code references are plain text (e.g., `torch.device`, `Space`) with **no** double backticks and **no** Sphinx roles (`:class:`, `:meth:`, `:func:`).
-- [ ] Inline comments explain "why" or clarify non-obvious steps instead of restating "what", and noise has been removed.
-- [ ] Longer functions/classes with distinct logical blocks use section-dividing comments.
+- [ ] `__init__`, `__len__`, and similar methods follow the rules (no redundant docstrings for `__init__`, short docstrings for dunder methods).
+- [ ] Code references in prose use proper **Sphinx roles** (``:class:``, ``:meth:``, ``:func:``) and **double backticks** (` ``var`` `).
+- [ ] Type fields (`Parameters`, `Attributes`, `Returns`, `Yields`) use plain type names with no Sphinx roles.
+- [ ] Math is minimal and only present where it clarifies behavior or usage; any formula uses ``:math:`` or ``.. math::`` blocks.
+- [ ] Class `Attributes` sections list public attributes not already documented under `Parameters` (unless transformed), including **inherited attributes**.
+- [ ] Type fields mirror the type hints (accepted types joined by `or`, including `or None`); `, optional` appears only on parameters with a default.
+- [ ] The `Returns` section uses names only when helpful; trivial returns use type-only notation.
+- [ ] Inline comments explain "why" or act as section dividers; noisy/obvious comments are removed.
 - [ ] Comments start with a capital letter and have no trailing period.
