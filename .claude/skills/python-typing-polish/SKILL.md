@@ -36,6 +36,26 @@ Type hints are the source of truth for types, including the type fields of docst
 - **Precision:** Parametrize generics (`dict[str, Any]`, not bare `dict`; `tuple[float, float]`, not `tuple`). Avoid `Any` unless strictly necessary or dictated by an external dynamic library.
 - Do not modify runtime code or add runtime casts just to satisfy a type checker.
 
+### Variables and attributes
+
+Annotate at boundaries (signatures, attribute initializations that inference cannot type) and let inference handle the interior.
+
+**Annotate:**
+
+- **Empty containers and `None` placeholders:** `self.history: list[float] = []`, `self.cache: dict[str, int] = {}`, `self.model: Model | None = None`.
+- **Attributes that change type later:** declare the union up front (e.g., `self.eta: float | None = None`).
+- **Too-narrow inference:** state the intended type (e.g., `self.count: float = 0`, since `0` infers `int`).
+- **Right-hand sides typed `Any` or untyped** (e.g., config builders, lookups in a `dict[str, Any]`): annotate to restore the precise type (e.g., `self.expert: Agent = build_from_config(cfg)`).
+- **Class-level fields** of dataclasses, `NamedTuple`, and `Protocol`, where annotations are required.
+
+**Do not annotate:**
+
+- **Attributes assigned from a typed parameter** (`self.eta = eta`); they inherit its type.
+- **Locals with obvious right-hand sides** (`n = len(xs)`, `total = 0.0`, `name = "x"`) or anything the checker already infers correctly.
+- **To silence a checker.** Fix the expression's type at its source instead; never use a blanket annotation to hide an `Any`.
+
+Never remove an existing annotation just because it is redundant.
+
 ---
 
 ## Return statements
@@ -132,6 +152,7 @@ print("Processing batch.")
 
 - [ ] **Runtime logic is 100% unchanged**; suspected bugs were reported, not fixed.
 - [ ] Every function and method has full parameter and return hints, with parametrized generics and modern syntax.
+- [ ] Variables and attributes are annotated only where inference fails (empty containers, `None` placeholders, changing or too-narrow types, `Any` right-hand sides), never for obvious locals or typed parameters.
 - [ ] `__init__` is annotated with `-> None`.
 - [ ] Every `-> None` function ends with an explicit `return`, except abstract methods and bodies ending in `raise`; internal returns are untouched.
 - [ ] All `@abstractmethod` bodies use `pass`.
