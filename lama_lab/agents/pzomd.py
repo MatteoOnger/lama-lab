@@ -76,14 +76,16 @@ class PZOMD(Agent):
         call.
     last_action_info : dict of str to Any
         Metadata about the last selected action, containing only ``"action"``
-        (inherited from :class:`Agent`).
+        and ``"pending_update"`` (inherited from :class:`Agent`).
 
     Raises
     ------
     ValueError
-        If ``init_x`` does not match ``action_space.shape`` (a scalar matches
-        only single-coordinate actions).
+        If ``init_x`` does not match ``action_space.shape``.
         If ``action_space`` is not an instance of :class:`~lama_lab.spaces.ContinuousSpace`.
+        If ``init_delta``, ``init_eta`` or ``max_grad_norm`` is not strictly positive.
+        If ``decay_delta`` or ``decay_eta`` is negative.
+        If ``min_delta`` or ``min_eta`` is negative or exceeds its initial value.
 
     Notes
     -----
@@ -128,6 +130,30 @@ class PZOMD(Agent):
     ) -> None:
         if not isinstance(action_space, ContinuousSpace):
             raise ValueError("'PZOMD' requires a continuous action space.")
+        if init_delta <= 0.0:
+            raise ValueError(
+                f"'init_delta' must be strictly positive. Got {init_delta}."
+            )
+        if init_eta <= 0.0:
+            raise ValueError(f"'init_eta' must be strictly positive. Got {init_eta}.")
+        if decay_delta < 0.0:
+            raise ValueError(f"'decay_delta' must be non-negative. Got {decay_delta}.")
+        if decay_eta < 0.0:
+            raise ValueError(f"'decay_eta' must be non-negative. Got {decay_eta}.")
+        if not 0.0 <= min_delta <= init_delta:
+            raise ValueError(
+                "'min_delta' must be non-negative and not exceed 'init_delta'. "
+                f"Got {min_delta} and {init_delta}."
+            )
+        if not 0.0 <= min_eta <= init_eta:
+            raise ValueError(
+                "'min_eta' must be non-negative and not exceed 'init_eta'. "
+                f"Got {min_eta} and {init_eta}."
+            )
+        if max_grad_norm <= 0.0:
+            raise ValueError(
+                f"'max_grad_norm' must be strictly positive. Got {max_grad_norm}."
+            )
 
         init_x = torch.as_tensor(init_x, dtype=action_space.dtype)
 
@@ -228,5 +254,5 @@ class PZOMD(Agent):
             "eta": float(self.eta),
         }
 
-    def get_policy(self) -> torch.Tensor | None:
+    def get_policy(self) -> None:
         return None

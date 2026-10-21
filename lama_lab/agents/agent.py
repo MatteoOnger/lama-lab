@@ -3,7 +3,7 @@ from typing import Any
 
 import torch
 
-from lama_lab.spaces import Space
+from ..spaces import Space
 
 
 class Agent(ABC):
@@ -25,8 +25,10 @@ class Agent(ABC):
     ----------
     last_action_info : dict of str to Any
         Metadata about the last selected action, overwritten at every step.
-        :meth:`act` stores the selected actions under ``"action"``; subclasses
-        may store additional keys and should document them.
+        :meth:`act` stores the selected actions under ``"action"`` and sets
+        ``"pending_update"`` to ``True``, which :meth:`update` resets to
+        ``False``. Subclasses may store additional keys and should document
+        them.
 
     Raises
     ------
@@ -68,6 +70,7 @@ class Agent(ABC):
             )
 
         self.last_action_info["action"] = action
+        self.last_action_info["pending_update"] = True
         return action
 
     def update(self, reward: torch.Tensor) -> None:
@@ -81,15 +84,22 @@ class Agent(ABC):
 
         Raises
         ------
+        RuntimeError
+            If no action is awaiting an update, i.e. :meth:`act` has not been
+            called since the last update.
         ValueError
             If ``reward`` does not have shape ``(n_episodes,)``.
         """
+        if not self.last_action_info.get("pending_update", False):
+            raise RuntimeError("No action is awaiting an update. Call 'act()' first.")
+
         if reward.shape != (self.n_episodes,):
             raise ValueError(
                 f"The 'reward' tensor must have shape ({self.n_episodes},), got {reward.shape}."
             )
 
         self._update(reward)
+        self.last_action_info["pending_update"] = False
         return
 
     @abstractmethod
@@ -120,7 +130,7 @@ class Agent(ABC):
         Returns
         -------
         torch.Tensor or None
-            Current action distribution, or ``None`` if the agent does not
-            maintain an explicit policy.
+            Current action distribution with shape ``(n_episodes, n_arms)``, or
+            ``None`` if the agent does not maintain an explicit policy.
         """
         pass

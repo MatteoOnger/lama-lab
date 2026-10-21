@@ -32,9 +32,10 @@ class BlumMansour(Agent):
         Configuration of the underlying expert, in the format accepted by
         :func:`~lama_lab.utils.build_from_config`. Its ``n_episodes``,
         ``action_space`` and ``name`` entries are overridden.
-        The expert must expose an explicit policy through ``get_policy``
-        and use the ``"action_index"`` and ``"action_probability"`` entries of its
-        ``last_action_info`` in its update, as :class:`~lama_lab.agents.Exp3` does.
+        The expert must expose an explicit policy through
+        :meth:`~lama_lab.agents.Agent.get_policy` and use the ``"action_index"`` and
+        ``"action_probability"`` entries of its ``last_action_info`` in its update,
+        as :class:`~lama_lab.agents.Exp3` does.
     name : str, optional
         Human-readable name of the agent. The expert is named
         ``"<name>_BatchedExpert"``.
@@ -45,24 +46,24 @@ class BlumMansour(Agent):
         Batched expert simulating one virtual expert per action in each episode,
         i.e. ``n_episodes * len(action_space)`` virtual episodes.
     stationary_dist : torch.Tensor
-        Stationary distribution used to sample the last action, with shape
-        ``(n_episodes, n_arms)``. It is uniform before the first call to
-        :meth:`act`.
+        Current stationary distribution, with shape ``(n_episodes, n_arms)``. It
+        is recomputed after every update, so the next action is sampled from it.
     warned_fallback : bool
         Whether the warning about the uniform fallback of the stationary
         distribution has been issued.
     last_action_info : dict of str to Any
         Metadata about the last selected action (inherited from :class:`Agent`).
-        Besides ``"action"``, :meth:`act` stores ``"action_index"``, the indices
-        of the sampled actions with shape ``(n_episodes,)``, and
-        ``"action_probability"``, their probabilities under the stationary
-        distribution with shape ``(n_episodes,)``.
+        Besides ``"action"`` and ``"pending_update"``, :meth:`act` stores
+        ``"action_index"``, the indices of the sampled actions with shape
+        ``(n_episodes,)``, and ``"action_probability"``, their probabilities
+        under the stationary distribution with shape ``(n_episodes,)``.
 
     Raises
     ------
     ValueError
         If ``action_space`` is not an instance of
         :class:`~lama_lab.spaces.DiscreteSpace`.
+        If the expert does not expose an explicit policy.
 
     Notes
     -----
@@ -100,30 +101,11 @@ class BlumMansour(Agent):
 
         self.expert: Agent = build_from_config(cfg)
 
-        self.stationary_dist: torch.Tensor = torch.ones(
-            (self.n_episodes, len(action_space))
-        ) / len(action_space)
         self.warned_fallback = False
+        self.stationary_dist: torch.Tensor = self._compute_stationary_dist()
         return
 
     def _act(self) -> torch.Tensor:
-        # The underlying expert returns one policy tensor for all virtual experts
-        expert_probs = self.expert.get_policy()
-        if expert_probs is None:
-            raise ValueError(
-                f"Expert '{self.expert.name}' returned None for 'get_policy()'. "
-                "Blum-Mansour requires base experts with explicit probability "
-                "distributions."
-            )
-
-        # Reshape the batched policy into one Markov matrix per episode
-        markov_matrix = expert_probs.reshape(
-            self.n_episodes, len(self.action_space), len(self.action_space)
-        )
-
-        # Solve the per-episode stationary distribution before sampling a global action
-        self.stationary_dist = self._solve_stationary_distribution(markov_matrix)
-
         # Sample one action per episode from the stationary distribution
         action_index = torch.multinomial(self.stationary_dist, num_samples=1).squeeze(
             -1
@@ -139,9 +121,6 @@ class BlumMansour(Agent):
         return self.action_space[action_index]
 
     def _update(self, reward: torch.Tensor) -> None:
-        if "action_index" not in self.last_action_info:
-            raise RuntimeError("Cannot update before calling '_act()'.")
-
         action_index: torch.Tensor = self.last_action_info["action_index"]
         action_probability: torch.Tensor = self.last_action_info["action_probability"]
 
@@ -166,13 +145,33 @@ class BlumMansour(Agent):
             .reshape(-1)
         )
 
-        # Pass the importance-weighted action metadata to the batched expert
+        # Pass the importance-weighted action metadata to the batched expert, which
+        # never acted on its own, so the action is also flagged as awaiting an update
         self.expert.last_action_info["action_index"] = expanded_action_index
         self.expert.last_action_info["action_probability"] = virtual_action_probability
+        self.expert.last_action_info["pending_update"] = True
 
         # Update the batched expert in one vectorized pass
         self.expert.update(expanded_reward)
+
+        # The expert policy changed, so the stationary distribution must follow it
+        self.stationary_dist = self._compute_stationary_dist()
         return
+
+    def _compute_stationary_dist(self) -> torch.Tensor:
+        """Stationary distribution of the current policy of the virtual experts."""
+        expert_probs = self.expert.get_policy()
+        if expert_probs is None:
+            raise ValueError(
+                f"Expert '{self.expert.name}' returned None for 'get_policy()'. "
+                "Blum-Mansour requires base experts with explicit probability "
+                "distributions."
+            )
+
+        markov_matrix = expert_probs.reshape(
+            self.n_episodes, len(self.action_space), len(self.action_space)
+        )
+        return self._solve_stationary_distribution(markov_matrix)
 
     def _solve_stationary_distribution(self, P: torch.Tensor) -> torch.Tensor:
         """Solve the stationary distribution of each Markov matrix in a batch.
@@ -214,5 +213,5 @@ class BlumMansour(Agent):
     def get_internal_state(self) -> dict[str, Any]:
         return self.expert.get_internal_state()
 
-    def get_policy(self) -> torch.Tensor | None:
+    def get_policy(self) -> torch.Tensor:
         return self.stationary_dist
