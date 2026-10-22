@@ -2,6 +2,7 @@ import dill
 import json
 from datetime import datetime
 from pathlib import Path
+from types import TracebackType
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -18,7 +19,7 @@ class ExperimentManager:
 
     Parameters
     ----------
-    path : str or Path
+    path : str or pathlib.Path
         Path to the experiment directory. The directory will be created if it
         does not exist.
     """
@@ -46,14 +47,14 @@ class ExperimentManager:
 
         Parameters
         ----------
-        name : str or Path
+        name : str or pathlib.Path
             Base file name or relative path.
         extension : str
             Expected file extension, including the leading dot (e.g. ``".json"``).
 
         Returns
         -------
-        file_path : Path
+        file_path : pathlib.Path
             Full path resolved within the experiment directory, guaranteed to end
             with the specified extension.
         """
@@ -67,12 +68,12 @@ class ExperimentManager:
 
         Parameters
         ----------
-        filename : str or Path
+        filename : str or pathlib.Path
             Name or relative path of the file.
 
         Returns
         -------
-        path : Path
+        path : pathlib.Path
             Full path resolved within the experiment directory.
         """
         return self.path / filename
@@ -88,7 +89,7 @@ class ExperimentManager:
         artifacts : dict of str to Any
             Dictionary mapping file/directory names to their loaded Python objects.
         """
-        artifacts = {}
+        artifacts: dict[str, Any] = {}
         for item_path in self.path.iterdir():
             if item_path.is_dir():
                 sub_manager = ExperimentManager(item_path)
@@ -105,7 +106,7 @@ class ExperimentManager:
 
         Parameters
         ----------
-        name : str or Path
+        name : str or pathlib.Path
             File name or relative path.
         encoding : str, optional
             Text encoding.
@@ -131,7 +132,7 @@ class ExperimentManager:
 
         Parameters
         ----------
-        name : str or Path
+        name : str or pathlib.Path
             File name or relative path.
 
         Returns
@@ -160,9 +161,9 @@ class ExperimentManager:
 
         Parameters
         ----------
-        name : str or Path
+        name : str or pathlib.Path
             File name or relative path.
-        map_location : torch.device or str, optional
+        map_location : torch.device or str or None, optional
             A string (e.g., ``"cpu"`` or ``"cuda:0"``) or a :class:`torch.device`
             specifying how to remap the tensor's storage location. This is
             crucial when loading a tensor saved on a GPU machine onto a
@@ -171,7 +172,7 @@ class ExperimentManager:
         weights_only : bool, optional
             Whether to restrict unpickling to tensors and primitive types.
             Setting this to ``True`` prevents arbitrary code execution when
-            loading untrusted files, by default ``True``.
+            loading untrusted files.
 
         Returns
         -------
@@ -195,7 +196,7 @@ class ExperimentManager:
 
         Parameters
         ----------
-        name : str or Path
+        name : str or pathlib.Path
             File name or relative path.
         encoding : str, optional
             Text encoding.
@@ -216,10 +217,12 @@ class ExperimentManager:
         return file_path.read_text(encoding=encoding)
 
     def save_all(self, artifacts: dict[str, Any]) -> None:
-        """Save a dictionary of heterogeneous objects automatically routing them to the correct format.
+        """Save heterogeneous objects, routing each one to the appropriate format.
 
-        If a value is a dictionary containing complex objects (like Tensors), a
-        subdirectory is created and its contents are saved recursively.
+        A dictionary that is JSON-serializable is saved as a JSON file; otherwise
+        a subdirectory is created and its contents are saved recursively. Other
+        values are saved by type (tensors, figures and strings), as JSON if they
+        are serializable, and pickled otherwise.
 
         Parameters
         ----------
@@ -264,9 +267,9 @@ class ExperimentManager:
 
         Parameters
         ----------
-        name : str or Path
+        name : str or pathlib.Path
             File name or relative path.
-        fig : matplotlib.figure.Figure, optional
+        fig : matplotlib.figure.Figure or None, optional
             Figure object to save. If ``None``, uses current active figure.
         dpi : int, optional
             Resolution in dots per inch.
@@ -277,7 +280,7 @@ class ExperimentManager:
 
         Returns
         -------
-        path : Path
+        path : pathlib.Path
             Path to the saved figure file.
         """
         extension = f".{fmt.lstrip('.')}"
@@ -298,7 +301,7 @@ class ExperimentManager:
 
         Parameters
         ----------
-        name : str or Path
+        name : str or pathlib.Path
             File name or relative path.
         obj : Any
             JSON-serializable object.
@@ -309,7 +312,7 @@ class ExperimentManager:
 
         Returns
         -------
-        path : Path
+        path : pathlib.Path
             Path to the saved JSON file.
         """
         file_path = self._get_path(name, ".json")
@@ -322,14 +325,14 @@ class ExperimentManager:
 
         Parameters
         ----------
-        name : str or Path
+        name : str or pathlib.Path
             File name or relative path.
         obj : Any
             Object to serialize. Supports complex types like lambdas.
 
         Returns
         -------
-        path : Path
+        path : pathlib.Path
             Path to the saved pickle file.
         """
         file_path = self._get_path(name, ".pkl")
@@ -342,14 +345,14 @@ class ExperimentManager:
 
         Parameters
         ----------
-        name : str or Path
+        name : str or pathlib.Path
             File name or relative path.
         tensor : torch.Tensor
             PyTorch tensor to save.
 
         Returns
         -------
-        path : Path
+        path : pathlib.Path
             Path to the saved tensor file.
         """
         file_path = self._get_path(name, ".pt")
@@ -361,7 +364,7 @@ class ExperimentManager:
 
         Parameters
         ----------
-        name : str or Path
+        name : str or pathlib.Path
             File name or relative path.
         text : str
             Text string to write.
@@ -370,7 +373,7 @@ class ExperimentManager:
 
         Returns
         -------
-        path : Path
+        path : pathlib.Path
             Path to the saved text file.
         """
         file_path = self._get_path(name, ".txt")
@@ -381,7 +384,12 @@ class ExperimentManager:
         """Enter the context manager."""
         return self
 
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool:
         """Exit the context manager."""
         return False
 
@@ -391,7 +399,7 @@ class ResultsManager:
 
     Parameters
     ----------
-    root : str or Path
+    root : str or pathlib.Path
         Root directory where all experiment subdirectories will be stored.
     """
 
@@ -405,7 +413,7 @@ class ResultsManager:
 
         Parameters
         ----------
-        name : str or Path
+        name : str or pathlib.Path
             Directory name or relative path under the root directory.
 
         Returns
@@ -433,7 +441,7 @@ class ResultsManager:
 
         Returns
         -------
-        exps : list of Path
+        exps : list of pathlib.Path
             List of experiment directory paths.
         """
         return sorted([p for p in self.root.iterdir() if p.is_dir()])

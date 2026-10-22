@@ -10,7 +10,7 @@ class RingBuffer:
         Maximum number of elements stored by the buffer.
     shape : tuple of int, optional
         Shape of each stored element.
-    device : torch.device, optional
+    device : torch.device or str or None, optional
         Device on which the underlying tensor is allocated. If ``None``, uses
         the device returned by :func:`torch.get_default_device`.
 
@@ -29,7 +29,7 @@ class RingBuffer:
         self,
         capacity: int,
         shape: tuple[int, ...] = (),
-        device: torch.device | None = None,
+        device: torch.device | str | None = None,
     ) -> None:
         if capacity <= 0:
             raise ValueError("'capacity' must be greater than 0.")
@@ -67,12 +67,12 @@ class RingBuffer:
         self.size = min(self.size + 1, self.capacity)
         return
 
-    def get_all(self, device: torch.device | None = None) -> torch.Tensor:
+    def get_all(self, device: torch.device | str | None = None) -> torch.Tensor:
         """Return all stored elements in chronological order.
 
         Parameters
         ----------
-        device : torch.device, optional
+        device : torch.device or str or None, optional
             Device on which to return the buffered data. If ``None``, the data
             is returned on the device where the buffer is stored.
 
@@ -92,14 +92,18 @@ class RingBuffer:
             return ordered
         return ordered.to(device=device)
 
-    def get_last(self, n: int = 1, device: torch.device | None = None) -> torch.Tensor:
+    def get_last(
+        self, n: int = 1, device: torch.device | str | None = None
+    ) -> torch.Tensor:
         """Return the most recent ``n`` stored elements.
+
+        If the buffer holds fewer than ``n`` elements, all of them are returned.
 
         Parameters
         ----------
         n : int, optional
             Number of recent elements to retrieve.
-        device : torch.device, optional
+        device : torch.device or str or None, optional
             Device on which to return the buffered data. If ``None``, the data
             is returned on the device where the buffer is stored.
 

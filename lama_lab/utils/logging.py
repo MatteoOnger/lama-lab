@@ -12,16 +12,17 @@ def setup_logger(
 
     Parameters
     ----------
-    log_path : pathlib.Path or str, optional
+    log_path : pathlib.Path or str or None, optional
         Path to the destination log file. If ``None``, logs are directed
         only to the console (terminal).
     name : str, optional
         Name of the logger instance.
     level : int or str, optional
         Logging threshold level.
-    capture_loggers : list of str, optional
+    capture_loggers : list of str or None, optional
         Names of additional :class:`logging.Logger` instances to attach the same
-        handlers to (e.g., ``["lama_lab"]``).
+        handlers to (e.g., ``["lama_lab"]``). If ``None``, only the main logger
+        is configured.
 
     Returns
     -------
@@ -49,7 +50,7 @@ def setup_logger(
         destination_path = Path(log_path)
         destination_path.parent.mkdir(parents=True, exist_ok=True)
 
-        file_handler = logging.FileHandler(destination_path)
+        file_handler = logging.FileHandler(destination_path, encoding="utf-8")
         file_handler.setFormatter(formatter)
         file_handler.setLevel(level)
         handlers.append(file_handler)

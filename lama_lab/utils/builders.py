@@ -12,6 +12,7 @@ def build_from_config(config: Any) -> Any:
     the remaining key-value pairs as keyword arguments.
 
     Supports deferred instantiation via ``_partial_``:
+
     - ``True`` or ``"partial"``: Returns a :class:`functools.partial` object.
     - ``"dict"`` or ``"raw"``: Returns the raw configuration dictionary.
 
@@ -58,11 +59,11 @@ def build_from_config(config: Any) -> Any:
         return {k: build_from_config(v) for k, v in cfg.items()}
 
     # Resolve target callable path
-    target_path: str = cfg.pop("_target_")
+    target_path = cfg.pop("_target_")
     if not isinstance(target_path, str) or "." not in target_path:
         raise ValueError(
-            f"'_target_' must be a dot-separated string path (e.g., 'module.Callable'). "
-            f"Got: {target_path!r}."
+            "'_target_' must be a dot-separated string path (e.g., 'module.Callable'). "
+            f"Got {target_path!r}."
         )
 
     module_path, obj_name = target_path.rsplit(".", 1)
