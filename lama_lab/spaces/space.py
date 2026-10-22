@@ -17,7 +17,10 @@ class Space(ABC):
     Attributes
     ----------
     ndim : int
-        Number of dimensions in the space, exposed as a property.
+        Number of axes of the shape of a single element, exposed as a property.
+    numel : int
+        Total number of scalar entries of a single element, exposed as a
+        property.
     """
 
     def __init__(self, shape: tuple[int, ...], dtype: torch.dtype) -> None:
@@ -89,7 +92,10 @@ class ContinuousSpace(Space):
     Attributes
     ----------
     ndim : int
-        Number of dimensions of a single element (inherited from
+        Number of axes of the shape of a single element (inherited from
+        :class:`Space`).
+    numel : int
+        Total number of scalar entries of a single element (inherited from
         :class:`Space`).
     """
 
@@ -117,7 +123,10 @@ class DiscreteSpace(Space):
     Attributes
     ----------
     ndim : int
-        Number of dimensions of a single element (inherited from
+        Number of axes of the shape of a single element (inherited from
+        :class:`Space`).
+    numel : int
+        Total number of scalar entries of a single element (inherited from
         :class:`Space`).
     """
 

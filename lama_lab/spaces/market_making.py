@@ -3,8 +3,16 @@ import torch
 from .space import ContinuousSpace, DiscreteSpace
 
 
+def _price_tolerance(dtype: torch.dtype, *prices: float) -> float:
+    """Absolute tolerance for comparing prices affected by floating-point rounding."""
+    return max(1e-9, 4.0 * torch.finfo(dtype).eps * max(1.0, *(abs(p) for p in prices)))
+
+
 class ContinuousMMActionSpace(ContinuousSpace):
-    """Continuous market-making action space for two-dimensional ``(bid, ask)`` price pairs.
+    """Continuous market-making action space of ``(bid, ask)`` price pairs.
+
+    A pair is valid when both prices lie in ``[low, high]`` and the ask exceeds
+    the bid by at least ``tick_size``.
 
     Parameters
     ----------
@@ -24,12 +32,16 @@ class ContinuousMMActionSpace(ContinuousSpace):
     shape : tuple of int
         Shape of a single action, ``(2,)`` (inherited from :class:`Space`).
     ndim : int
-        Number of dimensions of a single action (inherited from :class:`Space`).
+        Number of axes of the shape of a single action (inherited from
+        :class:`Space`).
+    numel : int
+        Total number of scalar entries of a single action (inherited from
+        :class:`Space`).
 
     Raises
     ------
     ValueError
-        If ``low >= high`` or if ``high - low < tick_size``.
+        If ``high - low < tick_size``.
     """
 
     def __init__(
@@ -39,8 +51,6 @@ class ContinuousMMActionSpace(ContinuousSpace):
         tick_size: float = 0.001,
         dtype: torch.dtype = torch.float32,
     ) -> None:
-        if low >= high:
-            raise ValueError("'low' must be strictly less than 'high'.")
         if high - low < tick_size:
             raise ValueError(
                 "The difference between 'high' and 'low' must be at least 'tick_size'."
@@ -48,10 +58,17 @@ class ContinuousMMActionSpace(ContinuousSpace):
 
         super().__init__(shape=(2,), dtype=dtype, low=low, high=high)
         self.tick_size = tick_size
+
+        # Tolerance on the spread, since 'project' builds it from rounded prices
+        self._spread_tolerance = _price_tolerance(dtype, low, high, tick_size)
         return
 
     def contains(self, x: torch.Tensor) -> torch.Tensor:
         """Check if a batch of ``(bid, ask)`` pairs belongs to the valid space.
+
+        An input that does not have shape ``(N, 2)`` yields an all-``False`` mask
+        instead of raising. The spread is compared with a small floating-point
+        tolerance.
 
         Parameters
         ----------
@@ -66,15 +83,20 @@ class ContinuousMMActionSpace(ContinuousSpace):
             each sample in the batch.
         """
         if x.ndim != 2 or x.shape[1] != 2:
-            return torch.zeros(x.shape[0], dtype=torch.bool, device=x.device)
+            return torch.zeros(x.shape[0], dtype=torch.bool)
 
         bids, asks = x[:, 0], x[:, 1]
         in_bounds = (bids >= self.low) & (asks <= self.high)
-        valid_spread = (asks - bids) >= self.tick_size
+        valid_spread = (asks - bids) >= self.tick_size - self._spread_tolerance
         return in_bounds & valid_spread
 
     def project(self, raw_x: torch.Tensor) -> torch.Tensor:
-        """Project a batch of unconstrained ``(bid, ask)`` pairs into a valid market-making domain.
+        """Project a batch of unconstrained ``(bid, ask)`` pairs onto the space.
+
+        Prices are clamped to ``[low, high]`` and ordered so that ``bid <= ask``.
+        A pair closer than ``tick_size`` is widened symmetrically around its
+        midpoint, and shifted back inside the interval if the widening crosses
+        a bound.
 
         Parameters
         ----------
@@ -120,10 +142,16 @@ class ContinuousMMActionSpace(ContinuousSpace):
                 a[above_high_mask] = self.high
         return torch.stack((b, a), dim=1)
 
+    def __str__(self) -> str:
+        return f"[{self.low}, {self.high}]"
+
 
 class DiscreteMMActionSpace(DiscreteSpace):
-    """Discrete market-making action space for two-dimensional ``(bid, ask)`` price pairs
-    based on a uniform price grid.
+    """Discrete market-making action space of ``(bid, ask)`` pairs on a uniform grid.
+
+    The space contains every pair of grid prices with ``bid < ask``, in
+    lexicographic order, so the index of an action is its position in
+    ``actions``.
 
     Parameters
     ----------
@@ -132,8 +160,7 @@ class DiscreteMMActionSpace(DiscreteSpace):
     high : float
         Highest price allowed on the grid.
     n_ticks : int
-        Number of intervals (ticks) between 'low' and 'high'. This implicitly
-        defines the 'tick_size' (step size) of the grid.
+        Number of intervals (ticks) between ``low`` and ``high``.
     dtype : torch.dtype, optional
         Data type of the physical tensor elements.
 
@@ -145,11 +172,15 @@ class DiscreteMMActionSpace(DiscreteSpace):
     prices : torch.Tensor
         Tensor of shape ``(n_ticks + 1,)`` containing all valid price ticks.
     tick_size : float
-        The price increment derived from 'low', 'high', and 'n_ticks'.
+        The price increment derived from ``low``, ``high`` and ``n_ticks``.
     shape : tuple of int
         Shape of a single action, ``(2,)`` (inherited from :class:`Space`).
     ndim : int
-        Number of dimensions of a single action (inherited from :class:`Space`).
+        Number of axes of the shape of a single action (inherited from
+        :class:`Space`).
+    numel : int
+        Total number of scalar entries of a single action (inherited from
+        :class:`Space`).
     num_elements : int
         Total number of valid discrete actions (inherited from :class:`DiscreteSpace`).
 
@@ -190,16 +221,15 @@ class DiscreteMMActionSpace(DiscreteSpace):
         self.actions = actions
 
         # Tolerance to handle floating-point inaccuracies
-        self._grid_tolerance = max(
-            1e-9,
-            4.0
-            * torch.finfo(dtype).eps
-            * max(1.0, abs(low), abs(high), abs(tick_size)),
-        )
+        self._grid_tolerance = _price_tolerance(dtype, low, high, tick_size)
         return
 
     def contains(self, x: torch.Tensor) -> torch.Tensor:
         """Check whether a batch of ``(bid, ask)`` pairs belongs to the grid.
+
+        A pair belongs to the grid when both prices are grid ticks in
+        ``[low, high]`` and ``bid < ask``. An input that does not have shape
+        ``(N, 2)`` yields an all-``False`` mask instead of raising.
 
         Parameters
         ----------
@@ -213,7 +243,7 @@ class DiscreteMMActionSpace(DiscreteSpace):
             valid discrete action.
         """
         if x.ndim != 2 or x.shape[1] != 2:
-            return torch.zeros(x.shape[0], dtype=torch.bool, device=x.device)
+            return torch.zeros(x.shape[0], dtype=torch.bool)
 
         steps = torch.round((x - self.low) / self.tick_size)
         grid_values = self.low + steps * self.tick_size
@@ -221,7 +251,7 @@ class DiscreteMMActionSpace(DiscreteSpace):
         on_grid = torch.isclose(
             x, grid_values, rtol=0.0, atol=self._grid_tolerance
         ).all(dim=1)
-        valid_order = x[:, 0] < x[:, 1]
+        valid_order = steps[:, 0] < steps[:, 1]
         in_range = (x >= self.low).all(dim=1) & (x <= self.high).all(dim=1)
         return on_grid & valid_order & in_range
 
@@ -229,9 +259,9 @@ class DiscreteMMActionSpace(DiscreteSpace):
         """Project continuous ``(bid, ask)`` pairs to the nearest valid grid action.
 
         Each pair is first ordered so that ``bid <= ask``. The ordered prices
-        are then independently snapped to the nearest price tick. If both prices
-        snap to the same tick, the closest valid pair with two distinct ticks is
-        selected.
+        are then independently snapped to the nearest price tick, clamped to the
+        grid range. If both prices snap to the same tick, the closest valid pair
+        with two distinct ticks is selected.
 
         Parameters
         ----------
@@ -368,3 +398,9 @@ class DiscreteMMActionSpace(DiscreteSpace):
             )
         n = self.n_ticks + 1
         return i * (n - 1) - (i * (i - 1)) // 2 + j - i - 1
+
+    def __str__(self) -> str:
+        return (
+            f"[{self.low}, {self.high}], tick size {self.tick_size:g} "
+            f"({self.num_elements} actions)"
+        )
