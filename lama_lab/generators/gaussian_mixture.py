@@ -57,6 +57,7 @@ class GaussianMixtureGenerator(Generator):
         low: float,
         high: float,
     ) -> None:
+        super().__init__()
         weights = torch.as_tensor(weights, dtype=torch.float64)
         means = torch.as_tensor(means, dtype=torch.float64)
         stds = torch.as_tensor(stds, dtype=torch.float64)
